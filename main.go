@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	"terraform-provider-portkey/internal/provider"
+	"github.com/portkey-ai/terraform/internal/provider"
 )
 
 // Run "go generate" to format example terraform files and generate the docs for the registry/website

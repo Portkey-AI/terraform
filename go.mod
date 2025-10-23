@@ -1,4 +1,4 @@
-module terraform-provider-portkey
+module github.com/portkey-ai/terraform
 
 go 1.21
 

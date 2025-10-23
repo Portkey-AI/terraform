@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"terraform-provider-portkey/internal/client"
+	"github.com/portkey-ai/terraform/internal/client"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
