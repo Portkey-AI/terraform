@@ -1,0 +1,11 @@
+environment = "production"
+team        = "platform"
+
+engineering_lead_email  = "eng-lead@company.com"
+ml_lead_email          = "ml-lead@company.com"
+analyst_email          = "analyst@company.com"
+backend_engineer_email = "backend@company.com"
+
+# Set PORTKEY_API_KEY environment variable or use:
+# portkey_api_key = "your-admin-api-key-here"
+
