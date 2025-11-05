@@ -1,5 +1,9 @@
 # Terraform Provider for Portkey
 
+[![Terraform Registry](https://img.shields.io/badge/registry-terraform-blue.svg)](https://registry.terraform.io/providers/portkey-ai/portkey/latest)
+[![CI](https://github.com/Portkey-AI/terraform-provider-portkey/actions/workflows/ci.yml/badge.svg)](https://github.com/Portkey-AI/terraform-provider-portkey/actions/workflows/ci.yml)
+[![Acceptance Tests](https://github.com/Portkey-AI/terraform-provider-portkey/actions/workflows/acc-tests.yml/badge.svg)](https://github.com/Portkey-AI/terraform-provider-portkey/actions/workflows/acc-tests.yml)
+
 A Terraform provider for managing Portkey workspaces, users, and organization resources through the [Portkey Admin API](https://portkey.ai/docs/api-reference/admin-api/introduction).
 
 ## Features
