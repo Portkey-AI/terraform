@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/portkey-ai/terraform/internal/client"
+	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"

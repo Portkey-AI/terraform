@@ -35,8 +35,8 @@ terraform {
 ### Building from Source
 
 ```bash
-git clone https://github.com/portkey-ai/terraform
-cd terraform
+git clone https://github.com/Portkey-AI/terraform-provider-portkey
+cd terraform-provider-portkey
 make install
 ```
 
@@ -347,7 +347,7 @@ This provider is distributed under the Mozilla Public License 2.0. See `LICENSE`
 
 - Documentation: [Portkey Docs](https://portkey.ai/docs)
 - Admin API Reference: [Admin API Docs](https://portkey.ai/docs/api-reference/admin-api/introduction)
-- Issues: [GitHub Issues](https://github.com/portkey-ai/terraform/issues)
+- Issues: [GitHub Issues](https://github.com/Portkey-AI/terraform-provider-portkey/issues)
 - Community: [Discord](https://portkey.sh/discord-1)
 
 ## Related Projects

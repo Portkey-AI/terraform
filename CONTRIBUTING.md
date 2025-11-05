@@ -10,7 +10,7 @@ By participating in this project, you agree to maintain a respectful and collabo
 
 ### Reporting Issues
 
-- **Search First**: Check if the issue already exists in the [issue tracker](https://github.com/portkey-ai/terraform/issues)
+- **Search First**: Check if the issue already exists in the [issue tracker](https://github.com/Portkey-AI/terraform-provider-portkey/issues)
 - **Provide Details**: Include as much information as possible:
   - Provider version
   - Terraform version
@@ -81,7 +81,7 @@ cd terraform
 
 ```bash
 # Clone the repository
-git clone https://github.com/portkey-ai/terraform
+git clone https://github.com/Portkey-AI/terraform-provider-portkey
 cd terraform
 
 # Install dependencies
@@ -214,8 +214,8 @@ func TestAccWorkspaceResource(t *testing.T) {
 
 ## Getting Help
 
-- **Questions**: Open a [GitHub Discussion](https://github.com/portkey-ai/terraform/discussions)
-- **Bugs**: File an [issue](https://github.com/portkey-ai/terraform/issues)
+- **Questions**: Open a [GitHub Discussion](https://github.com/Portkey-AI/terraform-provider-portkey/discussions)
+- **Bugs**: File an [issue](https://github.com/Portkey-AI/terraform-provider-portkey/issues)
 - **Chat**: Join the [Portkey Discord](https://portkey.sh/discord-1)
 
 ## License

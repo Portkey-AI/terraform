@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/portkey-ai/terraform/internal/client"
+	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
 
 // Ensure the implementation satisfies the expected interfaces.

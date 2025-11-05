@@ -94,8 +94,8 @@ The provider uses the Portkey Admin API which requires Organization-level API ke
 ## Updates and Patches
 
 Security updates will be released as needed. Subscribe to:
-- [GitHub Security Advisories](https://github.com/portkey-ai/terraform/security/advisories)
-- [GitHub Releases](https://github.com/portkey-ai/terraform/releases)
+- [GitHub Security Advisories](https://github.com/Portkey-AI/terraform-provider-portkey/security/advisories)
+- [GitHub Releases](https://github.com/Portkey-AI/terraform-provider-portkey/releases)
 
 ## Disclosure Policy
 
@@ -108,7 +108,7 @@ When a security issue is fixed:
 
 ## Questions?
 
-For questions about security that are not vulnerabilities, please open a [GitHub Discussion](https://github.com/portkey-ai/terraform/discussions).
+For questions about security that are not vulnerabilities, please open a [GitHub Discussion](https://github.com/Portkey-AI/terraform-provider-portkey/discussions).
 
 ---
 
