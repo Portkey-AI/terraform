@@ -65,3 +65,4 @@ debug
 .goreleaser.yml
 dist/
 
+portkey-gpg-private.asc
