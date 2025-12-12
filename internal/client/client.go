@@ -156,9 +156,18 @@ func (c *Client) UpdateWorkspace(ctx context.Context, id string, req UpdateWorks
 	return &workspace, nil
 }
 
+// DeleteWorkspaceRequest represents the request to delete a workspace
+type DeleteWorkspaceRequest struct {
+	Name        string `json:"name"`
+	ForceDelete bool   `json:"force_delete,omitempty"`
+}
+
 // DeleteWorkspace deletes a workspace
-func (c *Client) DeleteWorkspace(ctx context.Context, id string) error {
-	_, err := c.doRequest(ctx, http.MethodDelete, "/admin/workspaces/"+id, nil)
+func (c *Client) DeleteWorkspace(ctx context.Context, id string, name string) error {
+	req := DeleteWorkspaceRequest{
+		Name: name,
+	}
+	_, err := c.doRequest(ctx, http.MethodDelete, "/admin/workspaces/"+id, req)
 	return err
 }
 

@@ -213,8 +213,8 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 
-	// Delete existing workspace
-	err := r.client.DeleteWorkspace(ctx, state.ID.ValueString())
+	// Delete existing workspace (API requires name as confirmation)
+	err := r.client.DeleteWorkspace(ctx, state.ID.ValueString(), state.Name.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Deleting Portkey Workspace",
