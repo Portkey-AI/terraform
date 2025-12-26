@@ -40,6 +40,14 @@ func TestProvider_HasChildResources(t *testing.T) {
 		"portkey_workspace",
 		"portkey_workspace_member",
 		"portkey_user_invite",
+		"portkey_integration",
+		"portkey_api_key",
+		"portkey_provider",
+		"portkey_config",
+		"portkey_prompt",
+		"portkey_guardrail",
+		"portkey_usage_limits_policy",
+		"portkey_rate_limits_policy",
 	}
 
 	resources := New("test")().Resources(context.Background())
@@ -56,6 +64,22 @@ func TestProvider_HasChildDataSources(t *testing.T) {
 		"portkey_workspaces",
 		"portkey_user",
 		"portkey_users",
+		"portkey_integration",
+		"portkey_integrations",
+		"portkey_api_key",
+		"portkey_api_keys",
+		"portkey_provider",
+		"portkey_providers",
+		"portkey_config",
+		"portkey_configs",
+		"portkey_prompt",
+		"portkey_prompts",
+		"portkey_guardrail",
+		"portkey_guardrails",
+		"portkey_usage_limits_policy",
+		"portkey_usage_limits_policies",
+		"portkey_rate_limits_policy",
+		"portkey_rate_limits_policies",
 	}
 
 	dataSources := New("test")().DataSources(context.Background())
