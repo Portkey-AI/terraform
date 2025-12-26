@@ -56,4 +56,3 @@ data "portkey_prompts" "collection" {
 }
 `
 }
-

@@ -53,4 +53,3 @@ data "portkey_integration" "test" {
 }
 `, name)
 }
-

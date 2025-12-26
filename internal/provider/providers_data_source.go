@@ -28,7 +28,7 @@ type providersDataSource struct {
 
 // providersDataSourceModel maps the data source schema data.
 type providersDataSourceModel struct {
-	WorkspaceID types.String              `tfsdk:"workspace_id"`
+	WorkspaceID types.String            `tfsdk:"workspace_id"`
 	Providers   []providerDataItemModel `tfsdk:"providers"`
 }
 
@@ -177,4 +177,3 @@ func (d *providersDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 }
-

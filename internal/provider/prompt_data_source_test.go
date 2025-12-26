@@ -50,4 +50,3 @@ data "portkey_prompt" "test" {
 }
 `, name, collectionID, virtualKey)
 }
-

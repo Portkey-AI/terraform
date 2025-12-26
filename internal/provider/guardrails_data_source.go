@@ -28,7 +28,7 @@ type guardrailsDataSource struct {
 
 // guardrailsDataSourceModel maps the data source schema data.
 type guardrailsDataSourceModel struct {
-	WorkspaceID types.String             `tfsdk:"workspace_id"`
+	WorkspaceID types.String            `tfsdk:"workspace_id"`
 	Guardrails  []guardrailSummaryModel `tfsdk:"guardrails"`
 }
 
@@ -159,4 +159,3 @@ func (d *guardrailsDataSource) Read(ctx context.Context, req datasource.ReadRequ
 		return
 	}
 }
-

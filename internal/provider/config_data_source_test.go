@@ -45,4 +45,3 @@ data "portkey_config" "test" {
 }
 `, name, workspaceID)
 }
-

@@ -72,4 +72,3 @@ resource "portkey_provider" "test" {
 }
 `, name, workspaceID, integrationID, note)
 }
-

@@ -381,4 +381,3 @@ func (r *guardrailResource) preserveJSONFormatting(oldJSON, newJSON string) type
 
 	return types.StringValue(newJSON)
 }
-

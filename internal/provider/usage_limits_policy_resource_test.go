@@ -97,4 +97,3 @@ resource "portkey_usage_limits_policy" "test" {
 }
 `, name, workspaceID, creditLimit)
 }
-

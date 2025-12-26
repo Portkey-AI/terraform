@@ -315,4 +315,3 @@ func (r *integrationResource) ImportState(ctx context.Context, req resource.Impo
 	// Import by slug
 	resource.ImportStatePassthroughID(ctx, path.Root("slug"), req, resp)
 }
-

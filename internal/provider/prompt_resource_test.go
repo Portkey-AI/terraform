@@ -35,9 +35,9 @@ func TestAccPromptResource_basic(t *testing.T) {
 			},
 			// ImportState testing
 			{
-				ResourceName:            "portkey_prompt.test",
-				ImportState:             true,
-				ImportStateVerify:       true,
+				ResourceName:      "portkey_prompt.test",
+				ImportState:       true,
+				ImportStateVerify: true,
 				// parameters: API adds "model" field; virtual_key: API returns slug instead of ID
 				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "version_description", "parameters", "virtual_key"},
 			},
@@ -94,4 +94,3 @@ resource "portkey_prompt" "test" {
 }
 `, name, collectionID, virtualKey, template, model)
 }
-

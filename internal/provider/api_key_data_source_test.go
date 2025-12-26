@@ -42,4 +42,3 @@ data "portkey_api_key" "test" {
 }
 `, rnd)
 }
-

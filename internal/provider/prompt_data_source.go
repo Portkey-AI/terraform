@@ -195,4 +195,3 @@ func (d *promptDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 }
-

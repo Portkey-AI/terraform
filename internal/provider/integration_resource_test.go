@@ -116,4 +116,3 @@ resource "portkey_integration" "test" {
 }
 `, name, slug, aiProviderID)
 }
-

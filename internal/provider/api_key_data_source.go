@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -201,13 +200,3 @@ func (d *apiKeyDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 }
-
-// parseAPIKeyTypeDS parses the combined type field for data source
-func parseAPIKeyTypeDS(combinedType string) (keyType, subType string) {
-	parts := strings.SplitN(combinedType, "-", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
-	}
-	return combinedType, ""
-}
-

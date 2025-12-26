@@ -588,8 +588,8 @@ type APIKey struct {
 
 // RateLimit represents a rate limit configuration
 type RateLimit struct {
-	Type  string `json:"type"`  // requests
-	Unit  string `json:"unit"`  // rpm, rpd
+	Type  string `json:"type"` // requests
+	Unit  string `json:"unit"` // rpm, rpd
 	Value int    `json:"value"`
 }
 
@@ -1151,19 +1151,19 @@ func (c *Client) DeletePrompt(ctx context.Context, slugOrID string) error {
 
 // Guardrail represents a Portkey guardrail
 type Guardrail struct {
-	ID             string                   `json:"id"`
-	Slug           string                   `json:"slug"`
-	Name           string                   `json:"name"`
-	OrganisationID string                   `json:"organisation_id,omitempty"`
-	WorkspaceID    string                   `json:"workspace_id,omitempty"`
-	Checks         []GuardrailCheck         `json:"checks"`
-	Actions        map[string]interface{}   `json:"actions"`
-	Status         string                   `json:"status"`
-	VersionID      string                   `json:"version_id,omitempty"`
-	OwnerID        string                   `json:"owner_id,omitempty"`
-	UpdatedBy      string                   `json:"updated_by,omitempty"`
-	CreatedAt      time.Time                `json:"created_at"`
-	UpdatedAt      time.Time                `json:"last_updated_at"`
+	ID             string                 `json:"id"`
+	Slug           string                 `json:"slug"`
+	Name           string                 `json:"name"`
+	OrganisationID string                 `json:"organisation_id,omitempty"`
+	WorkspaceID    string                 `json:"workspace_id,omitempty"`
+	Checks         []GuardrailCheck       `json:"checks"`
+	Actions        map[string]interface{} `json:"actions"`
+	Status         string                 `json:"status"`
+	VersionID      string                 `json:"version_id,omitempty"`
+	OwnerID        string                 `json:"owner_id,omitempty"`
+	UpdatedBy      string                 `json:"updated_by,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"last_updated_at"`
 }
 
 // GuardrailCheck represents a check in a guardrail

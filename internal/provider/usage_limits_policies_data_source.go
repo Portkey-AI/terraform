@@ -29,7 +29,7 @@ type usageLimitsPoliciesDataSource struct {
 
 // usageLimitsPoliciesDataSourceModel maps the data source schema data.
 type usageLimitsPoliciesDataSourceModel struct {
-	WorkspaceID types.String                       `tfsdk:"workspace_id"`
+	WorkspaceID types.String                    `tfsdk:"workspace_id"`
 	Policies    []usageLimitsPolicySummaryModel `tfsdk:"policies"`
 }
 
@@ -212,4 +212,3 @@ func (d *usageLimitsPoliciesDataSource) Read(ctx context.Context, req datasource
 		return
 	}
 }
-

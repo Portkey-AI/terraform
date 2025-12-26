@@ -384,4 +384,3 @@ func (r *configResource) ImportState(ctx context.Context, req resource.ImportSta
 	// Import by slug
 	resource.ImportStatePassthroughID(ctx, path.Root("slug"), req, resp)
 }
-

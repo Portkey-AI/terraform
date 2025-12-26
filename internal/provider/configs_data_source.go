@@ -28,7 +28,7 @@ type configsDataSource struct {
 
 // configsDataSourceModel maps the data source schema data.
 type configsDataSourceModel struct {
-	WorkspaceID types.String        `tfsdk:"workspace_id"`
+	WorkspaceID types.String         `tfsdk:"workspace_id"`
 	Configs     []configSummaryModel `tfsdk:"configs"`
 }
 
@@ -170,4 +170,3 @@ func (d *configsDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 }
-

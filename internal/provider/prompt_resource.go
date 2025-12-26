@@ -458,4 +458,3 @@ func (r *promptResource) mapPromptToState(state *promptResourceModel, prompt *cl
 		state.UpdatedAt = types.StringValue(prompt.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"))
 	}
 }
-

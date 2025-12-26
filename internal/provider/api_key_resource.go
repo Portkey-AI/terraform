@@ -457,4 +457,3 @@ func parseAPIKeyType(combinedType string) (keyType, subType string) {
 	}
 	return combinedType, ""
 }
-

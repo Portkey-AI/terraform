@@ -180,4 +180,3 @@ func (d *promptsDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 }
-

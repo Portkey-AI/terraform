@@ -28,4 +28,3 @@ provider "portkey" {}
 data "portkey_integrations" "all" {}
 `
 }
-

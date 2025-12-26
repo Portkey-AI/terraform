@@ -29,7 +29,7 @@ type rateLimitsPoliciesDataSource struct {
 
 // rateLimitsPoliciesDataSourceModel maps the data source schema data.
 type rateLimitsPoliciesDataSourceModel struct {
-	WorkspaceID types.String                     `tfsdk:"workspace_id"`
+	WorkspaceID types.String                   `tfsdk:"workspace_id"`
 	Policies    []rateLimitsPolicySummaryModel `tfsdk:"policies"`
 }
 
@@ -196,4 +196,3 @@ func (d *rateLimitsPoliciesDataSource) Read(ctx context.Context, req datasource.
 		return
 	}
 }
-

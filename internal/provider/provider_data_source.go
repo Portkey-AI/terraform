@@ -156,4 +156,3 @@ func (d *providerDataSource) Read(ctx context.Context, req datasource.ReadReques
 		return
 	}
 }
-

@@ -83,4 +83,3 @@ resource "portkey_config" "test" {
 }
 `, name, workspaceID, config)
 }
-

@@ -409,4 +409,3 @@ func preserveJSONFormatting(oldJSON, newJSON string) types.String {
 
 	return types.StringValue(newJSON)
 }
-

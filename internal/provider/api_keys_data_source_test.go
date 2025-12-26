@@ -26,4 +26,3 @@ func testAccAPIKeysDataSourceConfig() string {
 data "portkey_api_keys" "test" {}
 `
 }
-

@@ -100,4 +100,3 @@ resource "portkey_api_key" "test" {
 }
 `, name)
 }
-

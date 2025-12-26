@@ -32,4 +32,3 @@ data "portkey_rate_limits_policies" "all" {
 }
 `
 }
-

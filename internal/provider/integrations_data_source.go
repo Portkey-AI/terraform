@@ -159,4 +159,3 @@ func (d *integrationsDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 }
-

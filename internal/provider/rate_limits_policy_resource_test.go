@@ -96,4 +96,3 @@ resource "portkey_rate_limits_policy" "test" {
 }
 `, name, workspaceID, value)
 }
-

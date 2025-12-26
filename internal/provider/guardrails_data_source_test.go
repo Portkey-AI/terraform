@@ -32,4 +32,3 @@ data "portkey_guardrails" "all" {
 }
 `
 }
-
