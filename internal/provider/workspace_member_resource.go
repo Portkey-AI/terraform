@@ -150,20 +150,22 @@ func (r *workspaceMemberResource) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 
-	// Get refreshed member value from Portkey
-	member, err := r.client.GetWorkspaceMember(ctx, state.WorkspaceID.ValueString(), state.ID.ValueString())
+	// Get refreshed member value from Portkey using user_id
+	member, err := r.client.GetWorkspaceMember(ctx, state.WorkspaceID.ValueString(), state.UserID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Reading Portkey Workspace Member",
-			"Could not read Portkey workspace member ID "+state.ID.ValueString()+": "+err.Error(),
+			"Could not read Portkey workspace member for user "+state.UserID.ValueString()+": "+err.Error(),
 		)
 		return
 	}
 
-	// Overwrite items with refreshed state
-	state.UserID = types.StringValue(member.UserID)
+	// Update state with refreshed values
+	state.ID = types.StringValue(member.ID)
 	state.Role = types.StringValue(member.Role)
-	state.CreatedAt = types.StringValue(member.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
+	if !member.CreatedAt.IsZero() {
+		state.CreatedAt = types.StringValue(member.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
+	}
 
 	// Set refreshed state
 	diags = resp.State.Set(ctx, &state)
@@ -183,18 +185,24 @@ func (r *workspaceMemberResource) Update(ctx context.Context, req resource.Updat
 		return
 	}
 
-	// Update workspace member role
+	// Update workspace member role using user_id
 	updateReq := client.UpdateWorkspaceMemberRequest{
 		Role: plan.Role.ValueString(),
 	}
 
-	_, err := r.client.UpdateWorkspaceMember(ctx, plan.WorkspaceID.ValueString(), plan.ID.ValueString(), updateReq)
+	member, err := r.client.UpdateWorkspaceMember(ctx, plan.WorkspaceID.ValueString(), plan.UserID.ValueString(), updateReq)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Updating Portkey Workspace Member",
 			"Could not update workspace member, unexpected error: "+err.Error(),
 		)
 		return
+	}
+
+	// Update state with response
+	plan.ID = types.StringValue(member.ID)
+	if !member.CreatedAt.IsZero() {
+		plan.CreatedAt = types.StringValue(member.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
 	}
 
 	diags = resp.State.Set(ctx, plan)
@@ -214,8 +222,8 @@ func (r *workspaceMemberResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	// Remove member from workspace
-	err := r.client.RemoveWorkspaceMember(ctx, state.WorkspaceID.ValueString(), state.ID.ValueString())
+	// Remove member from workspace using user_id
+	err := r.client.RemoveWorkspaceMember(ctx, state.WorkspaceID.ValueString(), state.UserID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Removing Portkey Workspace Member",

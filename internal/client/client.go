@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -59,7 +60,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	if err != nil {
 		return nil, fmt.Errorf("error making request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -242,10 +243,34 @@ func (c *Client) DeleteUser(ctx context.Context, id string) error {
 // WorkspaceMember represents a workspace member
 type WorkspaceMember struct {
 	ID          string    `json:"id"`
-	UserID      string    `json:"user_id"`
-	WorkspaceID string    `json:"workspace_id"`
+	UserID      string    `json:"user_id,omitempty"`
+	WorkspaceID string    `json:"workspace_id,omitempty"`
 	Role        string    `json:"role"`
+	Email       string    `json:"email,omitempty"`
+	FirstName   string    `json:"first_name,omitempty"`
+	LastName    string    `json:"last_name,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+// normalizeWorkspaceMember ensures consistent field values
+func normalizeWorkspaceMember(member *WorkspaceMember) {
+	// If ID is not set, use UserID
+	if member.ID == "" && member.UserID != "" {
+		member.ID = member.UserID
+	}
+	// Strip "ws-" prefix from role if present
+	member.Role = strings.TrimPrefix(member.Role, "ws-")
+}
+
+// workspaceUserItem represents a user in the add users request
+type workspaceUserItem struct {
+	ID   string `json:"id"`
+	Role string `json:"role"`
+}
+
+// addWorkspaceUsersRequest represents the request to add users to a workspace
+type addWorkspaceUsersRequest struct {
+	Users []workspaceUserItem `json:"users"`
 }
 
 // AddWorkspaceMemberRequest represents the request to add a workspace member
@@ -256,23 +281,34 @@ type AddWorkspaceMemberRequest struct {
 
 // AddWorkspaceMember adds a member to a workspace
 func (c *Client) AddWorkspaceMember(ctx context.Context, workspaceID string, req AddWorkspaceMemberRequest) (*WorkspaceMember, error) {
-	path := fmt.Sprintf("/admin/workspaces/%s/members", workspaceID)
-	respBody, err := c.doRequest(ctx, http.MethodPost, path, req)
+	// The API expects { users: [{ id, role }] } format
+	addReq := addWorkspaceUsersRequest{
+		Users: []workspaceUserItem{
+			{
+				ID:   req.UserID,
+				Role: req.Role,
+			},
+		},
+	}
+
+	path := fmt.Sprintf("/admin/workspaces/%s/users", workspaceID)
+	_, err := c.doRequest(ctx, http.MethodPost, path, addReq)
 	if err != nil {
 		return nil, err
 	}
 
-	var member WorkspaceMember
-	if err := json.Unmarshal(respBody, &member); err != nil {
-		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	// The add endpoint doesn't return member details, so we need to fetch them
+	member, err := c.GetWorkspaceMember(ctx, workspaceID, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("user added but failed to retrieve details: %w", err)
 	}
 
-	return &member, nil
+	return member, nil
 }
 
 // GetWorkspaceMember retrieves a workspace member
-func (c *Client) GetWorkspaceMember(ctx context.Context, workspaceID, memberID string) (*WorkspaceMember, error) {
-	path := fmt.Sprintf("/admin/workspaces/%s/members/%s", workspaceID, memberID)
+func (c *Client) GetWorkspaceMember(ctx context.Context, workspaceID, userID string) (*WorkspaceMember, error) {
+	path := fmt.Sprintf("/admin/workspaces/%s/users/%s", workspaceID, userID)
 	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -283,12 +319,17 @@ func (c *Client) GetWorkspaceMember(ctx context.Context, workspaceID, memberID s
 		return nil, fmt.Errorf("error unmarshaling response: %w", err)
 	}
 
+	// API getMember endpoint doesn't return id field, use the queried userID
+	if member.ID == "" {
+		member.ID = userID
+	}
+	normalizeWorkspaceMember(&member)
 	return &member, nil
 }
 
 // ListWorkspaceMembers retrieves all members of a workspace
 func (c *Client) ListWorkspaceMembers(ctx context.Context, workspaceID string) ([]WorkspaceMember, error) {
-	path := fmt.Sprintf("/admin/workspaces/%s/members", workspaceID)
+	path := fmt.Sprintf("/admin/workspaces/%s/users", workspaceID)
 	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -301,6 +342,11 @@ func (c *Client) ListWorkspaceMembers(ctx context.Context, workspaceID string) (
 		return nil, fmt.Errorf("error unmarshaling response: %w", err)
 	}
 
+	// Normalize all members
+	for i := range response.Data {
+		normalizeWorkspaceMember(&response.Data[i])
+	}
+
 	return response.Data, nil
 }
 
@@ -310,24 +356,25 @@ type UpdateWorkspaceMemberRequest struct {
 }
 
 // UpdateWorkspaceMember updates a workspace member's role
-func (c *Client) UpdateWorkspaceMember(ctx context.Context, workspaceID, memberID string, req UpdateWorkspaceMemberRequest) (*WorkspaceMember, error) {
-	path := fmt.Sprintf("/admin/workspaces/%s/members/%s", workspaceID, memberID)
-	respBody, err := c.doRequest(ctx, http.MethodPut, path, req)
+func (c *Client) UpdateWorkspaceMember(ctx context.Context, workspaceID, userID string, req UpdateWorkspaceMemberRequest) (*WorkspaceMember, error) {
+	path := fmt.Sprintf("/admin/workspaces/%s/users/%s", workspaceID, userID)
+	_, err := c.doRequest(ctx, http.MethodPut, path, req)
 	if err != nil {
 		return nil, err
 	}
 
-	var member WorkspaceMember
-	if err := json.Unmarshal(respBody, &member); err != nil {
-		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	// Fetch updated member details
+	member, err := c.GetWorkspaceMember(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("role updated but failed to retrieve details: %w", err)
 	}
 
-	return &member, nil
+	return member, nil
 }
 
 // RemoveWorkspaceMember removes a member from a workspace
-func (c *Client) RemoveWorkspaceMember(ctx context.Context, workspaceID, memberID string) error {
-	path := fmt.Sprintf("/admin/workspaces/%s/members/%s", workspaceID, memberID)
+func (c *Client) RemoveWorkspaceMember(ctx context.Context, workspaceID, userID string) error {
+	path := fmt.Sprintf("/admin/workspaces/%s/users/%s", workspaceID, userID)
 	_, err := c.doRequest(ctx, http.MethodDelete, path, nil)
 	return err
 }
@@ -412,5 +459,1038 @@ func (c *Client) ListUserInvites(ctx context.Context) ([]UserInvite, error) {
 // DeleteUserInvite deletes a user invitation
 func (c *Client) DeleteUserInvite(ctx context.Context, id string) error {
 	_, err := c.doRequest(ctx, http.MethodDelete, "/admin/users/invites/"+id, nil)
+	return err
+}
+
+// Integration represents a Portkey integration (connection to an AI provider)
+type Integration struct {
+	ID             string                 `json:"id"`
+	Slug           string                 `json:"slug"`
+	Name           string                 `json:"name"`
+	AIProviderID   string                 `json:"ai_provider_id"`
+	Description    string                 `json:"description,omitempty"`
+	Status         string                 `json:"status"`
+	MaskedKey      string                 `json:"masked_key,omitempty"`
+	Configurations map[string]interface{} `json:"configurations,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"last_updated_at"`
+}
+
+// CreateIntegrationRequest represents the request to create an integration
+type CreateIntegrationRequest struct {
+	Name           string                 `json:"name"`
+	Slug           string                 `json:"slug,omitempty"`
+	AIProviderID   string                 `json:"ai_provider_id"`
+	Key            string                 `json:"key,omitempty"`
+	Description    string                 `json:"description,omitempty"`
+	Configurations map[string]interface{} `json:"configurations,omitempty"`
+}
+
+// UpdateIntegrationRequest represents the request to update an integration
+type UpdateIntegrationRequest struct {
+	Name           string                 `json:"name,omitempty"`
+	Key            string                 `json:"key,omitempty"`
+	Description    string                 `json:"description,omitempty"`
+	Configurations map[string]interface{} `json:"configurations,omitempty"`
+}
+
+// CreateIntegrationResponse represents the response from creating an integration
+type CreateIntegrationResponse struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+}
+
+// CreateIntegration creates a new integration
+func (c *Client) CreateIntegration(ctx context.Context, req CreateIntegrationRequest) (*CreateIntegrationResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/integrations", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CreateIntegrationResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetIntegration retrieves an integration by slug
+func (c *Client) GetIntegration(ctx context.Context, slug string) (*Integration, error) {
+	respBody, err := c.doRequest(ctx, http.MethodGet, "/integrations/"+slug, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var integration Integration
+	if err := json.Unmarshal(respBody, &integration); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &integration, nil
+}
+
+// ListIntegrations retrieves all integrations
+func (c *Client) ListIntegrations(ctx context.Context) ([]Integration, error) {
+	respBody, err := c.doRequest(ctx, http.MethodGet, "/integrations", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Data []Integration `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
+// UpdateIntegration updates an integration
+func (c *Client) UpdateIntegration(ctx context.Context, slug string, req UpdateIntegrationRequest) (*Integration, error) {
+	_, err := c.doRequest(ctx, http.MethodPut, "/integrations/"+slug, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch updated integration details
+	return c.GetIntegration(ctx, slug)
+}
+
+// DeleteIntegration deletes an integration
+func (c *Client) DeleteIntegration(ctx context.Context, slug string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/integrations/"+slug, nil)
+	return err
+}
+
+// APIKey represents a Portkey API key
+type APIKey struct {
+	ID             string                 `json:"id"`
+	Key            string                 `json:"key,omitempty"` // Only returned on creation
+	Name           string                 `json:"name"`
+	Description    string                 `json:"description,omitempty"`
+	Type           string                 `json:"type"` // organisation-service, workspace-service, workspace-user
+	OrganisationID string                 `json:"organisation_id"`
+	WorkspaceID    string                 `json:"workspace_id,omitempty"`
+	UserID         string                 `json:"user_id,omitempty"`
+	Status         string                 `json:"status"`
+	CreationMode   string                 `json:"creation_mode,omitempty"`
+	RateLimits     []RateLimit            `json:"rate_limits,omitempty"`
+	UsageLimits    *UsageLimits           `json:"usage_limits,omitempty"`
+	Scopes         []string               `json:"scopes,omitempty"`
+	Defaults       map[string]interface{} `json:"defaults,omitempty"`
+	AlertEmails    []string               `json:"alert_emails,omitempty"`
+	ExpiresAt      *time.Time             `json:"expires_at,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"last_updated_at"`
+}
+
+// RateLimit represents a rate limit configuration
+type RateLimit struct {
+	Type  string `json:"type"`  // requests
+	Unit  string `json:"unit"`  // rpm, rpd
+	Value int    `json:"value"`
+}
+
+// UsageLimits represents usage limit configuration
+type UsageLimits struct {
+	CreditsLimit     *float64 `json:"credits_limit,omitempty"`
+	CreditsLimitType string   `json:"credits_limit_type,omitempty"` // per_day, monthly, total
+}
+
+// CreateAPIKeyRequest represents the request to create an API key
+type CreateAPIKeyRequest struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	WorkspaceID string                 `json:"workspace_id,omitempty"`
+	UserID      string                 `json:"user_id,omitempty"` // Required for user sub-type
+	RateLimits  []RateLimit            `json:"rate_limits,omitempty"`
+	UsageLimits *UsageLimits           `json:"usage_limits,omitempty"`
+	Scopes      []string               `json:"scopes,omitempty"`
+	Defaults    map[string]interface{} `json:"defaults,omitempty"`
+	AlertEmails []string               `json:"alert_emails,omitempty"`
+	ExpiresAt   string                 `json:"expires_at,omitempty"`
+}
+
+// CreateAPIKeyResponse represents the response from creating an API key
+type CreateAPIKeyResponse struct {
+	ID     string `json:"id"`
+	Key    string `json:"key"`
+	Object string `json:"object"`
+}
+
+// UpdateAPIKeyRequest represents the request to update an API key
+type UpdateAPIKeyRequest struct {
+	Name        string                 `json:"name,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	RateLimits  []RateLimit            `json:"rate_limits,omitempty"`
+	UsageLimits *UsageLimits           `json:"usage_limits,omitempty"`
+	Scopes      []string               `json:"scopes,omitempty"`
+	Defaults    map[string]interface{} `json:"defaults,omitempty"`
+	AlertEmails []string               `json:"alert_emails,omitempty"`
+}
+
+// CreateAPIKey creates a new API key
+// keyType: "organisation" or "workspace"
+// subType: "service" or "user"
+func (c *Client) CreateAPIKey(ctx context.Context, keyType, subType string, req CreateAPIKeyRequest) (*CreateAPIKeyResponse, error) {
+	path := fmt.Sprintf("/api-keys/%s/%s", keyType, subType)
+	respBody, err := c.doRequest(ctx, http.MethodPost, path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CreateAPIKeyResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetAPIKey retrieves an API key by ID
+func (c *Client) GetAPIKey(ctx context.Context, id string) (*APIKey, error) {
+	respBody, err := c.doRequest(ctx, http.MethodGet, "/api-keys/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiKey APIKey
+	if err := json.Unmarshal(respBody, &apiKey); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &apiKey, nil
+}
+
+// ListAPIKeys retrieves all API keys
+func (c *Client) ListAPIKeys(ctx context.Context, workspaceID string) ([]APIKey, error) {
+	path := "/api-keys"
+	if workspaceID != "" {
+		path = fmt.Sprintf("/api-keys?workspace_id=%s", workspaceID)
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Data []APIKey `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
+// UpdateAPIKey updates an API key
+func (c *Client) UpdateAPIKey(ctx context.Context, id string, req UpdateAPIKeyRequest) (*APIKey, error) {
+	_, err := c.doRequest(ctx, http.MethodPut, "/api-keys/"+id, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch updated API key details
+	return c.GetAPIKey(ctx, id)
+}
+
+// DeleteAPIKey deletes an API key
+func (c *Client) DeleteAPIKey(ctx context.Context, id string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/api-keys/"+id, nil)
+	return err
+}
+
+// Provider represents a Portkey provider (virtual key)
+type Provider struct {
+	ID            string                 `json:"id"`
+	Slug          string                 `json:"slug"`
+	Name          string                 `json:"name"`
+	AIProviderID  string                 `json:"ai_provider_name,omitempty"`
+	IntegrationID string                 `json:"integration_id,omitempty"`
+	WorkspaceID   string                 `json:"workspace_id,omitempty"`
+	Status        string                 `json:"status"`
+	Note          string                 `json:"note,omitempty"`
+	ModelConfig   map[string]interface{} `json:"model_config,omitempty"`
+	RateLimits    []RateLimit            `json:"rate_limits,omitempty"`
+	UsageLimits   *UsageLimits           `json:"usage_limits,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
+	ExpiresAt     *time.Time             `json:"expires_at,omitempty"`
+}
+
+// CreateProviderRequest represents the request to create a provider
+type CreateProviderRequest struct {
+	Name          string                 `json:"name"`
+	Slug          string                 `json:"slug,omitempty"`
+	WorkspaceID   string                 `json:"workspace_id"`
+	IntegrationID string                 `json:"integration_id"`
+	Note          string                 `json:"note,omitempty"`
+	ModelConfig   map[string]interface{} `json:"model_config,omitempty"`
+	RateLimits    []RateLimit            `json:"rate_limits,omitempty"`
+	UsageLimits   *UsageLimits           `json:"usage_limits,omitempty"`
+}
+
+// CreateProviderResponse represents the response from creating a provider
+type CreateProviderResponse struct {
+	ID     string `json:"id"`
+	Slug   string `json:"slug"`
+	Object string `json:"object"`
+}
+
+// UpdateProviderRequest represents the request to update a provider
+type UpdateProviderRequest struct {
+	Name        string                 `json:"name,omitempty"`
+	WorkspaceID string                 `json:"workspace_id"`
+	Note        string                 `json:"note,omitempty"`
+	ModelConfig map[string]interface{} `json:"model_config,omitempty"`
+	RateLimits  []RateLimit            `json:"rate_limits,omitempty"`
+	UsageLimits *UsageLimits           `json:"usage_limits,omitempty"`
+}
+
+// CreateProvider creates a new provider
+func (c *Client) CreateProvider(ctx context.Context, req CreateProviderRequest) (*CreateProviderResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/providers", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CreateProviderResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetProvider retrieves a provider by ID
+func (c *Client) GetProvider(ctx context.Context, id, workspaceID string) (*Provider, error) {
+	path := fmt.Sprintf("/providers/%s?workspace_id=%s", id, workspaceID)
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var provider Provider
+	if err := json.Unmarshal(respBody, &provider); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &provider, nil
+}
+
+// ListProviders retrieves all providers for a workspace
+func (c *Client) ListProviders(ctx context.Context, workspaceID string) ([]Provider, error) {
+	path := "/providers"
+	if workspaceID != "" {
+		path = fmt.Sprintf("/providers?workspace_id=%s", workspaceID)
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Data []Provider `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
+// UpdateProvider updates a provider
+func (c *Client) UpdateProvider(ctx context.Context, id string, req UpdateProviderRequest) (*Provider, error) {
+	_, err := c.doRequest(ctx, http.MethodPut, "/providers/"+id, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch updated provider details
+	return c.GetProvider(ctx, id, req.WorkspaceID)
+}
+
+// DeleteProvider deletes a provider
+func (c *Client) DeleteProvider(ctx context.Context, id, workspaceID string) error {
+	path := fmt.Sprintf("/providers/%s?workspace_id=%s", id, workspaceID)
+	_, err := c.doRequest(ctx, http.MethodDelete, path, nil)
+	return err
+}
+
+// Config represents a Portkey config
+type Config struct {
+	ID             string                 `json:"id"`
+	Slug           string                 `json:"slug"`
+	Name           string                 `json:"name"`
+	Config         map[string]interface{} `json:"-"` // Parsed config map
+	ConfigRaw      string                 `json:"-"` // Raw config string
+	WorkspaceID    string                 `json:"workspace_id"`
+	OrganisationID string                 `json:"organisation_id"`
+	IsDefault      int                    `json:"is_default"`
+	Status         string                 `json:"status"`
+	OwnerID        string                 `json:"owner_id,omitempty"`
+	UpdatedBy      string                 `json:"updated_by,omitempty"`
+	Format         string                 `json:"format,omitempty"`
+	Type           string                 `json:"type,omitempty"`
+	VersionID      string                 `json:"version_id,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"last_updated_at"`
+}
+
+// CreateConfigRequest represents the request to create a config
+type CreateConfigRequest struct {
+	Name        string                 `json:"name"`
+	Config      map[string]interface{} `json:"config"`
+	WorkspaceID string                 `json:"workspace_id,omitempty"`
+	IsDefault   *int                   `json:"isDefault,omitempty"`
+}
+
+// CreateConfigResponse represents the response from creating a config
+type CreateConfigResponse struct {
+	ID        string `json:"id"`
+	Slug      string `json:"slug"`
+	VersionID string `json:"version_id"`
+}
+
+// UpdateConfigRequest represents the request to update a config
+type UpdateConfigRequest struct {
+	Name   string                 `json:"name,omitempty"`
+	Config map[string]interface{} `json:"config,omitempty"`
+	Status string                 `json:"status,omitempty"`
+}
+
+// UpdateConfigResponse represents the response from updating a config
+type UpdateConfigResponse struct {
+	VersionID string `json:"version_id"`
+}
+
+// CreateConfig creates a new config
+func (c *Client) CreateConfig(ctx context.Context, req CreateConfigRequest) (*CreateConfigResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/configs", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CreateConfigResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// configAPIResponse is used for unmarshaling API responses with flexible config field
+type configAPIResponse struct {
+	ID             string      `json:"id"`
+	Slug           string      `json:"slug"`
+	Name           string      `json:"name"`
+	Config         interface{} `json:"config"` // Can be string or object
+	WorkspaceID    string      `json:"workspace_id"`
+	OrganisationID string      `json:"organisation_id"`
+	IsDefault      int         `json:"is_default"`
+	Status         string      `json:"status"`
+	OwnerID        string      `json:"owner_id,omitempty"`
+	UpdatedBy      string      `json:"updated_by,omitempty"`
+	Format         string      `json:"format,omitempty"`
+	Type           string      `json:"type,omitempty"`
+	VersionID      string      `json:"version_id,omitempty"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"last_updated_at"`
+}
+
+// GetConfig retrieves a config by slug
+func (c *Client) GetConfig(ctx context.Context, slug string) (*Config, error) {
+	respBody, err := c.doRequest(ctx, http.MethodGet, "/configs/"+slug, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var apiResp configAPIResponse
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	config := &Config{
+		ID:             apiResp.ID,
+		Slug:           apiResp.Slug,
+		Name:           apiResp.Name,
+		WorkspaceID:    apiResp.WorkspaceID,
+		OrganisationID: apiResp.OrganisationID,
+		IsDefault:      apiResp.IsDefault,
+		Status:         apiResp.Status,
+		OwnerID:        apiResp.OwnerID,
+		UpdatedBy:      apiResp.UpdatedBy,
+		Format:         apiResp.Format,
+		Type:           apiResp.Type,
+		VersionID:      apiResp.VersionID,
+		CreatedAt:      apiResp.CreatedAt,
+		UpdatedAt:      apiResp.UpdatedAt,
+	}
+
+	// Handle config field which can be a string (JSON) or object
+	switch v := apiResp.Config.(type) {
+	case string:
+		config.ConfigRaw = v
+		// Parse string to map
+		var configMap map[string]interface{}
+		if err := json.Unmarshal([]byte(v), &configMap); err == nil {
+			config.Config = configMap
+		}
+	case map[string]interface{}:
+		config.Config = v
+		// Convert to string
+		if configBytes, err := json.Marshal(v); err == nil {
+			config.ConfigRaw = string(configBytes)
+		}
+	}
+
+	return config, nil
+}
+
+// ListConfigs retrieves all configs
+func (c *Client) ListConfigs(ctx context.Context, workspaceID string) ([]Config, error) {
+	path := "/configs"
+	if workspaceID != "" {
+		path = fmt.Sprintf("/configs?workspace_id=%s", workspaceID)
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Data []Config `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
+// UpdateConfig updates a config
+func (c *Client) UpdateConfig(ctx context.Context, slug string, req UpdateConfigRequest) (*UpdateConfigResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPut, "/configs/"+slug, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response UpdateConfigResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// DeleteConfig deletes a config
+func (c *Client) DeleteConfig(ctx context.Context, slug string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/configs/"+slug, nil)
+	return err
+}
+
+// Prompt represents a Portkey prompt
+type Prompt struct {
+	ID                       string                 `json:"id"`
+	Slug                     string                 `json:"slug"`
+	Name                     string                 `json:"name"`
+	CollectionID             string                 `json:"collection_id"`
+	String                   string                 `json:"string"`
+	Parameters               map[string]interface{} `json:"parameters,omitempty"`
+	Model                    string                 `json:"model,omitempty"`
+	VirtualKey               string                 `json:"virtual_key,omitempty"`
+	Functions                []interface{}          `json:"functions,omitempty"`
+	Tools                    []interface{}          `json:"tools,omitempty"`
+	ToolChoice               interface{}            `json:"tool_choice,omitempty"`
+	TemplateMetadata         map[string]interface{} `json:"template_metadata,omitempty"`
+	IsRawTemplate            int                    `json:"is_raw_template"`
+	PromptVersion            int                    `json:"prompt_version"`
+	PromptVersionID          string                 `json:"prompt_version_id,omitempty"`
+	PromptVersionStatus      string                 `json:"prompt_version_status,omitempty"`
+	PromptVersionDescription string                 `json:"prompt_version_description,omitempty"`
+	Status                   string                 `json:"status"`
+	CreatedAt                time.Time              `json:"created_at"`
+	UpdatedAt                time.Time              `json:"last_updated_at"`
+}
+
+// CreatePromptRequest represents the request to create a prompt
+type CreatePromptRequest struct {
+	Name               string                 `json:"name"`
+	CollectionID       string                 `json:"collection_id"`
+	String             string                 `json:"string"`
+	Parameters         map[string]interface{} `json:"parameters"`
+	Model              string                 `json:"model,omitempty"`
+	VirtualKey         string                 `json:"virtual_key"`
+	VersionDescription string                 `json:"version_description,omitempty"`
+	TemplateMetadata   map[string]interface{} `json:"template_metadata,omitempty"`
+}
+
+// CreatePromptResponse represents the response from creating a prompt
+type CreatePromptResponse struct {
+	ID        string `json:"id"`
+	Slug      string `json:"slug"`
+	VersionID string `json:"version_id"`
+}
+
+// UpdatePromptRequest represents the request to update a prompt
+type UpdatePromptRequest struct {
+	Name               string                 `json:"name,omitempty"`
+	CollectionID       string                 `json:"collection_id,omitempty"`
+	String             string                 `json:"string,omitempty"`
+	Parameters         map[string]interface{} `json:"parameters,omitempty"`
+	Model              string                 `json:"model,omitempty"`
+	VirtualKey         string                 `json:"virtual_key,omitempty"`
+	VersionDescription string                 `json:"version_description,omitempty"`
+	TemplateMetadata   map[string]interface{} `json:"template_metadata,omitempty"`
+	IsRawTemplate      *int                   `json:"is_raw_template,omitempty"`
+}
+
+// UpdatePromptResponse represents the response from updating a prompt
+type UpdatePromptResponse struct {
+	ID              string `json:"id,omitempty"`
+	Slug            string `json:"slug,omitempty"`
+	PromptVersionID string `json:"prompt_version_id,omitempty"`
+}
+
+// CreatePrompt creates a new prompt
+func (c *Client) CreatePrompt(ctx context.Context, req CreatePromptRequest) (*CreatePromptResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/prompts", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CreatePromptResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetPrompt retrieves a prompt by slug or ID
+func (c *Client) GetPrompt(ctx context.Context, slugOrID string, version string) (*Prompt, error) {
+	path := "/prompts/" + slugOrID
+	if version != "" {
+		path += "?version=" + version
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var prompt Prompt
+	if err := json.Unmarshal(respBody, &prompt); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &prompt, nil
+}
+
+// ListPrompts retrieves all prompts
+func (c *Client) ListPrompts(ctx context.Context, workspaceID, collectionID string) ([]Prompt, error) {
+	path := "/prompts"
+	params := []string{}
+	if workspaceID != "" {
+		params = append(params, "workspace_id="+workspaceID)
+	}
+	if collectionID != "" {
+		params = append(params, "collection_id="+collectionID)
+	}
+	if len(params) > 0 {
+		path += "?" + strings.Join(params, "&")
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Data []Prompt `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
+// UpdatePrompt updates a prompt
+func (c *Client) UpdatePrompt(ctx context.Context, slugOrID string, req UpdatePromptRequest) (*UpdatePromptResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPut, "/prompts/"+slugOrID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response UpdatePromptResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		// Name-only updates return empty JSON {}
+		return &UpdatePromptResponse{}, nil
+	}
+
+	return &response, nil
+}
+
+// MakePromptVersionDefault makes a specific version the default
+func (c *Client) MakePromptVersionDefault(ctx context.Context, slugOrID string, version int) error {
+	req := map[string]int{"version": version}
+	_, err := c.doRequest(ctx, http.MethodPut, "/prompts/"+slugOrID+"/makeDefault", req)
+	return err
+}
+
+// DeletePrompt deletes a prompt
+func (c *Client) DeletePrompt(ctx context.Context, slugOrID string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/prompts/"+slugOrID, nil)
+	return err
+}
+
+// Guardrail represents a Portkey guardrail
+type Guardrail struct {
+	ID             string                   `json:"id"`
+	Slug           string                   `json:"slug"`
+	Name           string                   `json:"name"`
+	OrganisationID string                   `json:"organisation_id,omitempty"`
+	WorkspaceID    string                   `json:"workspace_id,omitempty"`
+	Checks         []GuardrailCheck         `json:"checks"`
+	Actions        map[string]interface{}   `json:"actions"`
+	Status         string                   `json:"status"`
+	VersionID      string                   `json:"version_id,omitempty"`
+	OwnerID        string                   `json:"owner_id,omitempty"`
+	UpdatedBy      string                   `json:"updated_by,omitempty"`
+	CreatedAt      time.Time                `json:"created_at"`
+	UpdatedAt      time.Time                `json:"last_updated_at"`
+}
+
+// GuardrailCheck represents a check in a guardrail
+type GuardrailCheck struct {
+	ID         string                 `json:"id"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
+}
+
+// CreateGuardrailRequest represents the request to create a guardrail
+type CreateGuardrailRequest struct {
+	Name           string                 `json:"name"`
+	WorkspaceID    string                 `json:"workspace_id,omitempty"`
+	OrganisationID string                 `json:"organisation_id,omitempty"`
+	Checks         []GuardrailCheck       `json:"checks"`
+	Actions        map[string]interface{} `json:"actions"`
+}
+
+// CreateGuardrailResponse represents the response from creating a guardrail
+type CreateGuardrailResponse struct {
+	ID        string `json:"id"`
+	Slug      string `json:"slug"`
+	VersionID string `json:"version_id"`
+}
+
+// UpdateGuardrailRequest represents the request to update a guardrail
+type UpdateGuardrailRequest struct {
+	Name    string                 `json:"name,omitempty"`
+	Checks  []GuardrailCheck       `json:"checks,omitempty"`
+	Actions map[string]interface{} `json:"actions,omitempty"`
+}
+
+// CreateGuardrail creates a new guardrail
+func (c *Client) CreateGuardrail(ctx context.Context, req CreateGuardrailRequest) (*CreateGuardrailResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/guardrails", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CreateGuardrailResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetGuardrail retrieves a guardrail by slug or ID
+func (c *Client) GetGuardrail(ctx context.Context, slugOrID string) (*Guardrail, error) {
+	respBody, err := c.doRequest(ctx, http.MethodGet, "/guardrails/"+slugOrID, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var guardrail Guardrail
+	if err := json.Unmarshal(respBody, &guardrail); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &guardrail, nil
+}
+
+// ListGuardrails retrieves all guardrails
+func (c *Client) ListGuardrails(ctx context.Context, workspaceID string) ([]Guardrail, error) {
+	path := "/guardrails"
+	if workspaceID != "" {
+		path = fmt.Sprintf("/guardrails?workspace_id=%s", workspaceID)
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Data []Guardrail `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
+// UpdateGuardrail updates a guardrail
+func (c *Client) UpdateGuardrail(ctx context.Context, slugOrID string, req UpdateGuardrailRequest) (*Guardrail, error) {
+	_, err := c.doRequest(ctx, http.MethodPut, "/guardrails/"+slugOrID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch updated guardrail details
+	return c.GetGuardrail(ctx, slugOrID)
+}
+
+// DeleteGuardrail deletes a guardrail
+func (c *Client) DeleteGuardrail(ctx context.Context, slugOrID string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/guardrails/"+slugOrID, nil)
+	return err
+}
+
+// PolicyCondition represents a condition in a policy
+type PolicyCondition struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// PolicyGroupBy represents a group by field in a policy
+type PolicyGroupBy struct {
+	Key string `json:"key"`
+}
+
+// UsageLimitsPolicy represents a Portkey usage limits policy
+type UsageLimitsPolicy struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name,omitempty"`
+	Conditions     []PolicyCondition `json:"conditions"`
+	GroupBy        []PolicyGroupBy   `json:"group_by"`
+	Type           string            `json:"type"`
+	CreditLimit    float64           `json:"credit_limit"`
+	AlertThreshold *float64          `json:"alert_threshold,omitempty"`
+	PeriodicReset  string            `json:"periodic_reset,omitempty"`
+	Status         string            `json:"status"`
+	WorkspaceID    string            `json:"workspace_id"`
+	OrganisationID string            `json:"organisation_id"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"last_updated_at"`
+}
+
+// CreateUsageLimitsPolicyRequest represents the request to create a usage limits policy
+type CreateUsageLimitsPolicyRequest struct {
+	Name           string            `json:"name,omitempty"`
+	WorkspaceID    string            `json:"workspace_id,omitempty"`
+	OrganisationID string            `json:"organisation_id,omitempty"`
+	Conditions     []PolicyCondition `json:"conditions"`
+	GroupBy        []PolicyGroupBy   `json:"group_by"`
+	Type           string            `json:"type"`
+	CreditLimit    float64           `json:"credit_limit"`
+	AlertThreshold *float64          `json:"alert_threshold,omitempty"`
+	PeriodicReset  string            `json:"periodic_reset,omitempty"`
+}
+
+// UpdateUsageLimitsPolicyRequest represents the request to update a usage limits policy
+type UpdateUsageLimitsPolicyRequest struct {
+	Name           string   `json:"name,omitempty"`
+	CreditLimit    *float64 `json:"credit_limit,omitempty"`
+	AlertThreshold *float64 `json:"alert_threshold,omitempty"`
+	Status         string   `json:"status,omitempty"`
+}
+
+// CreateUsageLimitsPolicyResponse represents the response from creating a usage limits policy
+type CreateUsageLimitsPolicyResponse struct {
+	ID string `json:"id"`
+}
+
+// CreateUsageLimitsPolicy creates a new usage limits policy
+func (c *Client) CreateUsageLimitsPolicy(ctx context.Context, req CreateUsageLimitsPolicyRequest) (*CreateUsageLimitsPolicyResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/policies/usage-limits", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CreateUsageLimitsPolicyResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetUsageLimitsPolicy retrieves a usage limits policy by ID
+func (c *Client) GetUsageLimitsPolicy(ctx context.Context, id string) (*UsageLimitsPolicy, error) {
+	respBody, err := c.doRequest(ctx, http.MethodGet, "/policies/usage-limits/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var policy UsageLimitsPolicy
+	if err := json.Unmarshal(respBody, &policy); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &policy, nil
+}
+
+// ListUsageLimitsPolicies retrieves all usage limits policies
+func (c *Client) ListUsageLimitsPolicies(ctx context.Context, workspaceID string) ([]UsageLimitsPolicy, error) {
+	path := "/policies/usage-limits"
+	if workspaceID != "" {
+		path = fmt.Sprintf("/policies/usage-limits?workspace_id=%s", workspaceID)
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Data []UsageLimitsPolicy `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
+// UpdateUsageLimitsPolicy updates a usage limits policy
+func (c *Client) UpdateUsageLimitsPolicy(ctx context.Context, id string, req UpdateUsageLimitsPolicyRequest) (*UsageLimitsPolicy, error) {
+	_, err := c.doRequest(ctx, http.MethodPut, "/policies/usage-limits/"+id, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.GetUsageLimitsPolicy(ctx, id)
+}
+
+// DeleteUsageLimitsPolicy deletes a usage limits policy
+func (c *Client) DeleteUsageLimitsPolicy(ctx context.Context, id string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/policies/usage-limits/"+id, nil)
+	return err
+}
+
+// RateLimitsPolicy represents a Portkey rate limits policy
+type RateLimitsPolicy struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name,omitempty"`
+	Conditions     []PolicyCondition `json:"conditions"`
+	GroupBy        []PolicyGroupBy   `json:"group_by"`
+	Type           string            `json:"type"`
+	Unit           string            `json:"unit"`
+	Value          float64           `json:"value"`
+	Status         string            `json:"status"`
+	WorkspaceID    string            `json:"workspace_id"`
+	OrganisationID string            `json:"organisation_id"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"last_updated_at"`
+}
+
+// CreateRateLimitsPolicyRequest represents the request to create a rate limits policy
+type CreateRateLimitsPolicyRequest struct {
+	Name           string            `json:"name,omitempty"`
+	WorkspaceID    string            `json:"workspace_id,omitempty"`
+	OrganisationID string            `json:"organisation_id,omitempty"`
+	Conditions     []PolicyCondition `json:"conditions"`
+	GroupBy        []PolicyGroupBy   `json:"group_by"`
+	Type           string            `json:"type"`
+	Unit           string            `json:"unit"`
+	Value          float64           `json:"value"`
+}
+
+// UpdateRateLimitsPolicyRequest represents the request to update a rate limits policy
+type UpdateRateLimitsPolicyRequest struct {
+	Name   string   `json:"name,omitempty"`
+	Unit   string   `json:"unit,omitempty"`
+	Value  *float64 `json:"value,omitempty"`
+	Status string   `json:"status,omitempty"`
+}
+
+// CreateRateLimitsPolicyResponse represents the response from creating a rate limits policy
+type CreateRateLimitsPolicyResponse struct {
+	ID string `json:"id"`
+}
+
+// CreateRateLimitsPolicy creates a new rate limits policy
+func (c *Client) CreateRateLimitsPolicy(ctx context.Context, req CreateRateLimitsPolicyRequest) (*CreateRateLimitsPolicyResponse, error) {
+	respBody, err := c.doRequest(ctx, http.MethodPost, "/policies/rate-limits", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CreateRateLimitsPolicyResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetRateLimitsPolicy retrieves a rate limits policy by ID
+func (c *Client) GetRateLimitsPolicy(ctx context.Context, id string) (*RateLimitsPolicy, error) {
+	respBody, err := c.doRequest(ctx, http.MethodGet, "/policies/rate-limits/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var policy RateLimitsPolicy
+	if err := json.Unmarshal(respBody, &policy); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &policy, nil
+}
+
+// ListRateLimitsPolicies retrieves all rate limits policies
+func (c *Client) ListRateLimitsPolicies(ctx context.Context, workspaceID string) ([]RateLimitsPolicy, error) {
+	path := "/policies/rate-limits"
+	if workspaceID != "" {
+		path = fmt.Sprintf("/policies/rate-limits?workspace_id=%s", workspaceID)
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		Data []RateLimitsPolicy `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
+// UpdateRateLimitsPolicy updates a rate limits policy
+func (c *Client) UpdateRateLimitsPolicy(ctx context.Context, id string, req UpdateRateLimitsPolicyRequest) (*RateLimitsPolicy, error) {
+	_, err := c.doRequest(ctx, http.MethodPut, "/policies/rate-limits/"+id, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.GetRateLimitsPolicy(ctx, id)
+}
+
+// DeleteRateLimitsPolicy deletes a rate limits policy
+func (c *Client) DeleteRateLimitsPolicy(ctx context.Context, id string) error {
+	_, err := c.doRequest(ctx, http.MethodDelete, "/policies/rate-limits/"+id, nil)
 	return err
 }

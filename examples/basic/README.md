@@ -55,5 +55,6 @@ terraform destroy
 
 ## Next Steps
 
-For a more complete example with multiple environments and teams, see the [multi-environment example](../multi-environment/).
+- [AI Gateway Example](../ai-gateway/) - Set up integrations, providers, configs, guardrails, and policies
+- [Multi-Environment Example](../multi-environment/) - Multiple environments with shared configurations
 

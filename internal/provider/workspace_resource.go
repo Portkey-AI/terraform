@@ -193,7 +193,8 @@ func (r *workspaceResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	// Update resource state with updated items and timestamp
+	// Update resource state with updated items and timestamps
+	plan.CreatedAt = types.StringValue(workspace.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
 	plan.UpdatedAt = types.StringValue(workspace.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"))
 
 	diags = resp.State.Set(ctx, plan)

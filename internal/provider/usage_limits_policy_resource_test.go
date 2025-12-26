@@ -1,0 +1,100 @@
+package provider
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccUsageLimitsPolicyResource_basic(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-test")
+	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read testing
+			{
+				Config: testAccUsageLimitsPolicyResourceConfig(rName, workspaceID, 1000.0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_usage_limits_policy.test", "id"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "name", rName),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "workspace_id", workspaceID),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "type", "cost"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "credit_limit", "1000"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "periodic_reset", "monthly"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "status", "active"),
+				),
+			},
+			// ImportState testing
+			{
+				ResourceName:            "portkey_usage_limits_policy.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
+			},
+			// Update credit_limit testing
+			{
+				Config: testAccUsageLimitsPolicyResourceConfig(rName, workspaceID, 2000.0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "credit_limit", "2000"),
+				),
+			},
+			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
+func TestAccUsageLimitsPolicyResource_updateName(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-rename")
+	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccUsageLimitsPolicyResourceConfig(rName, workspaceID, 1000.0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "name", rName),
+				),
+			},
+			{
+				Config: testAccUsageLimitsPolicyResourceConfig(rName+"-updated", workspaceID, 1000.0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "name", rName+"-updated"),
+				),
+			},
+		},
+	})
+}
+
+func testAccUsageLimitsPolicyResourceConfig(name, workspaceID string, creditLimit float64) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_usage_limits_policy" "test" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  conditions   = jsonencode([
+    {
+      key   = "workspace_id"
+      value = %[2]q
+    }
+  ])
+  group_by = jsonencode([
+    {
+      key = "api_key"
+    }
+  ])
+  type           = "cost"
+  credit_limit   = %[3]f
+  alert_threshold = %[3]f * 0.8
+  periodic_reset = "monthly"
+}
+`, name, workspaceID, creditLimit)
+}
+

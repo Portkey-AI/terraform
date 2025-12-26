@@ -234,25 +234,167 @@ git push origin v0.2.0
 
 ---
 
+## Pre-Implementation: Test API First
+
+**Always test the API with curl before implementing:**
+
+```bash
+# Test CREATE - discover required fields
+curl -s -X POST "https://api.portkey.ai/v1/<endpoint>" \
+  -H "x-portkey-api-key: $PORTKEY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "test"}' | jq .
+
+# Check the albus codebase for validation rules
+grep -r "body.*notEmpty\|body.*isString" src/api/v2/<endpoint>/routes.js
+```
+
+**Common surprises discovered this way:**
+- `key` is required for integrations (most AI providers need an API key)
+- Workspace DELETE requires `{"name": "..."}` in body
+- User UPDATE rejects same-role updates (no-op detection)
+- Some endpoints use `slug` instead of `id` for lookups
+
+---
+
+## Slug vs ID Resources
+
+Some resources use **slug** as the primary identifier:
+
+| Resource | Identifier | Example |
+|----------|------------|---------|
+| Workspaces | ID (UUID) | `ws-abc-123456` |
+| Integrations | Slug | `my-openai-prod` |
+
+**For slug-based resources:**
+
+```go
+// Import by slug, not ID
+func (r *integrationResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+    resource.ImportStatePassthroughID(ctx, path.Root("slug"), req, resp)
+}
+
+// Read uses slug from state
+func (r *integrationResource) Read(ctx context.Context, ...) {
+    integration, err := r.client.GetIntegration(ctx, state.Slug.ValueString())
+    
+    // IMPORTANT: Always set slug in Read, or import tests fail!
+    state.Slug = types.StringValue(integration.Slug)
+}
+```
+
+---
+
+## Common Pitfalls
+
+### 1. Import State Verification Fails
+**Symptom:** `ImportStateVerify attributes not equivalent`
+
+**Cause:** Forgot to set a field in `Read()` function
+
+**Fix:** Ensure Read sets ALL fields from API response:
+```go
+state.ID = types.StringValue(integration.ID)
+state.Slug = types.StringValue(integration.Slug)  // Don't forget!
+state.Name = types.StringValue(integration.Name)
+```
+
+### 2. Create Returns "Invalid request"
+**Symptom:** `AB01: Invalid request. Please check and try again.`
+
+**Cause:** Missing required field or wrong format
+
+**Fix:** Check albus routes.js for validation:
+```javascript
+// Example: integrations require one of these
+oneOf([
+    body('workspace_id').notEmpty(),
+    body('organisation_id').notEmpty().isUUID(),
+    header('x-portkey-api-key').notEmpty(),
+]),
+body('key').optional().isString(),  // But controller requires it!
+```
+
+### 3. Sensitive Fields
+**For write-only fields (like API keys):**
+```go
+"key": schema.StringAttribute{
+    Description: "API key (write-only, not returned by API)",
+    Optional:    true,
+    Sensitive:   true,  // Masks in logs/output
+},
+```
+
+In tests, ignore on import:
+```go
+ImportStateVerifyIgnore: []string{"key", "created_at", "updated_at"},
+```
+
+---
+
+## Acceptance Tests
+
+**File:** `internal/provider/<name>_resource_test.go`
+
+```go
+func TestAccIntegrationResource_basic(t *testing.T) {
+    rName := acctest.RandomWithPrefix("tf-acc-test")
+
+    resource.Test(t, resource.TestCase{
+        PreCheck:                 func() { testAccPreCheck(t) },
+        ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+        Steps: []resource.TestStep{
+            // Create
+            {
+                Config: testAccConfig(rName),
+                Check: resource.ComposeAggregateTestCheckFunc(
+                    resource.TestCheckResourceAttrSet("portkey_integration.test", "id"),
+                    resource.TestCheckResourceAttr("portkey_integration.test", "name", rName),
+                ),
+            },
+            // Import
+            {
+                ResourceName:            "portkey_integration.test",
+                ImportState:             true,
+                ImportStateVerify:       true,
+                ImportStateVerifyIgnore: []string{"key"},  // Write-only fields
+            },
+            // Update
+            {
+                Config: testAccConfig(rName + "-updated"),
+                Check: resource.TestCheckResourceAttr("portkey_integration.test", "name", rName+"-updated"),
+            },
+            // Delete happens automatically
+        },
+    })
+}
+```
+
+**Run tests:**
+```bash
+export PORTKEY_API_KEY="your-key"
+TF_ACC=1 go test ./internal/provider -v -run TestAccIntegration -timeout 10m
+```
+
+---
+
 ## Quick Checklist
 
 ```
+□ TEST API FIRST with curl (discover required fields!)
 □ Client methods in client.go (Create, Get, Update, Delete, List)
 □ Resource file created (internal/provider/<name>_resource.go)
 □ Data source file if needed (internal/provider/<name>_data_source.go)
 □ Registered in provider.go
-□ Example created (examples/<feature>/main.tf)
-□ Build passes: make build
-□ Example works: terraform apply
+□ Acceptance tests written and passing
+□ Build passes: make install
 □ API verification:
   □ CREATE: API returns resource after apply
   □ UPDATE: API shows updated fields after modify+apply
   □ DELETE: API returns 404 after destroy
-□ Updates work in-place (not recreate)
-□ README.md updated
-□ AVAILABLE_APIS.md updated
+□ Import works correctly
+□ RESOURCE_MATRIX.md updated
 □ Committed and pushed
-□ Tagged for release
 ```
 
 ---
@@ -274,7 +416,8 @@ git push origin v0.2.0
 
 | Priority | API | Endpoint | Notes |
 |----------|-----|----------|-------|
-| 1 | Virtual Keys | `/virtual-keys` | Core feature |
+| ✅ | Integrations | `/integrations` | Done - AI provider connections |
+| 1 | Virtual Keys | `/virtual-keys` | Core feature, workspace-scoped |
 | 2 | Configs | `/configs` | Gateway routing |
 | 3 | Prompts | `/prompts` | Template management |
 | 4 | API Keys | `/api-keys` | Access management |

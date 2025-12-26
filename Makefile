@@ -23,13 +23,18 @@ fmt:
 	gofmt -s -w -e .
 	terraform fmt -recursive ./examples/
 
-# Lint
+# Lint code
 lint:
 	golangci-lint run
+
+# Run all checks (same as CI)
+check: fmt lint
+	go build ./...
+	go test ./... -v -count=1
 
 # Clean build artifacts
 clean:
 	rm -f terraform-provider-portkey
 	rm -rf ~/.terraform.d/plugins/registry.terraform.io/portkey-ai/
 
-.PHONY: default generate testacc build install fmt lint clean
+.PHONY: default generate testacc build install fmt lint check clean

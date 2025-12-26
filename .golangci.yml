@@ -1,0 +1,20 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  # Use defaults (errcheck, govet, ineffassign, staticcheck, unused) plus:
+  enable:
+    - misspell      # Finds misspellings
+    - bodyclose     # Checks HTTP response body is closed
+
+formatters:
+  enable:
+    - gofmt         # Checks formatting
+    - goimports     # Checks imports formatting
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

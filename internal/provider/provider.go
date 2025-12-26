@@ -160,6 +160,22 @@ func (p *portkeyProvider) DataSources(_ context.Context) []func() datasource.Dat
 		NewWorkspacesDataSource,
 		NewUserDataSource,
 		NewUsersDataSource,
+		NewIntegrationDataSource,
+		NewIntegrationsDataSource,
+		NewAPIKeyDataSource,
+		NewAPIKeysDataSource,
+		NewProviderDataSource,
+		NewProvidersDataSource,
+		NewConfigDataSource,
+		NewConfigsDataSource,
+		NewPromptDataSource,
+		NewPromptsDataSource,
+		NewGuardrailDataSource,
+		NewGuardrailsDataSource,
+		NewUsageLimitsPolicyDataSource,
+		NewUsageLimitsPoliciesDataSource,
+		NewRateLimitsPolicyDataSource,
+		NewRateLimitsPoliciesDataSource,
 	}
 }
 
@@ -169,5 +185,13 @@ func (p *portkeyProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewWorkspaceResource,
 		NewWorkspaceMemberResource,
 		NewUserInviteResource,
+		NewIntegrationResource,
+		NewAPIKeyResource,
+		NewProviderResource,
+		NewConfigResource,
+		NewPromptResource,
+		NewGuardrailResource,
+		NewUsageLimitsPolicyResource,
+		NewRateLimitsPolicyResource,
 	}
 }

@@ -4,16 +4,31 @@
 [![CI](https://github.com/Portkey-AI/terraform-provider-portkey/actions/workflows/ci.yml/badge.svg)](https://github.com/Portkey-AI/terraform-provider-portkey/actions/workflows/ci.yml)
 [![Acceptance Tests](https://github.com/Portkey-AI/terraform-provider-portkey/actions/workflows/acc-tests.yml/badge.svg)](https://github.com/Portkey-AI/terraform-provider-portkey/actions/workflows/acc-tests.yml)
 
-A Terraform provider for managing Portkey workspaces, users, and organization resources through the [Portkey Admin API](https://portkey.ai/docs/api-reference/admin-api/introduction).
+A Terraform provider for managing Portkey resources through the [Portkey Admin API](https://portkey.ai/docs/api-reference/admin-api/introduction).
 
 ## Features
 
 This provider enables you to manage:
 
+### Organization Management
 - **Workspaces**: Create, update, and manage workspaces for organizing teams and projects
 - **Workspace Members**: Assign users to workspaces with specific roles
 - **User Invitations**: Send invitations to users with organization and workspace access
-- **Users**: Query and manage existing users in your organization
+- **Users**: Query existing users in your organization (read-only)
+
+### AI Gateway Resources
+- **Integrations**: Manage AI provider connections (OpenAI, Anthropic, Azure, etc.)
+- **Providers (Virtual Keys)**: Create workspace-scoped API keys for AI providers
+- **Configs**: Define gateway configurations with routing, fallbacks, and load balancing
+- **Prompts**: Manage versioned prompt templates
+
+### Governance & Policies
+- **Guardrails**: Set up content moderation, validation rules, and safety checks
+- **Usage Limits Policies**: Control costs with spending limits and thresholds
+- **Rate Limits Policies**: Manage request rates per minute/hour/day
+
+### Access Control
+- **API Keys**: Create and manage Portkey API keys (organization and workspace-scoped)
 
 ## Requirements
 
@@ -97,20 +112,125 @@ resource "portkey_workspace" "production" {
 }
 ```
 
-### Complete Organization Setup
+### Complete AI Gateway Setup
 
 ```hcl
-# Create multiple workspaces
-resource "portkey_workspace" "engineering" {
-  name        = "Engineering"
-  description = "Engineering team workspace"
+# Create a workspace
+resource "portkey_workspace" "production" {
+  name        = "Production"
+  description = "Production environment"
 }
 
-resource "portkey_workspace" "ml_research" {
-  name        = "ML Research"
-  description = "Machine Learning research workspace"
+# Create an integration for OpenAI
+resource "portkey_integration" "openai" {
+  name           = "OpenAI Production"
+  ai_provider_id = "openai"
+  key            = var.openai_api_key
 }
 
+# Create a provider (virtual key) linked to the integration
+resource "portkey_provider" "openai_prod" {
+  name           = "OpenAI Production Key"
+  workspace_id   = portkey_workspace.production.id
+  integration_id = portkey_integration.openai.id
+}
+
+# Create a gateway config with retry logic
+resource "portkey_config" "production" {
+  name         = "Production Config"
+  workspace_id = portkey_workspace.production.id
+  
+  config = jsonencode({
+    retry = {
+      attempts = 3
+      on_status_codes = [429, 500, 502, 503]
+    }
+    cache = {
+      mode = "simple"
+    }
+  })
+}
+
+# Create a prompt template
+resource "portkey_prompt" "assistant" {
+  name          = "AI Assistant"
+  collection_id = "your-collection-id"
+  virtual_key   = portkey_provider.openai_prod.id
+  model         = "gpt-4"
+  
+  string = "You are a helpful assistant. User: {{user_input}}"
+  
+  parameters = jsonencode({
+    temperature = 0.7
+    max_tokens  = 1000
+  })
+}
+
+# Create a guardrail for content moderation
+resource "portkey_guardrail" "content_filter" {
+  name         = "Content Filter"
+  workspace_id = portkey_workspace.production.id
+  
+  checks = [
+    {
+      id = "default.wordCount"
+      parameters = {
+        minWords = 1
+        maxWords = 5000
+      }
+    }
+  ]
+  
+  actions = {
+    onFail  = "block"
+    message = "Content validation failed"
+  }
+}
+
+# Create a usage limits policy
+resource "portkey_usage_limits_policy" "cost_limit" {
+  name           = "Monthly Cost Limit"
+  workspace_id   = portkey_workspace.production.id
+  type           = "cost"
+  credit_limit   = 1000.0
+  alert_threshold = 800.0
+  periodic_reset = "monthly"
+  
+  conditions = []
+  group_by   = [{ key = "api_key" }]
+}
+
+# Create a rate limits policy
+resource "portkey_rate_limits_policy" "api_rate" {
+  name         = "API Rate Limit"
+  workspace_id = portkey_workspace.production.id
+  type         = "requests"
+  unit         = "rpm"
+  value        = 100
+  
+  conditions = []
+  group_by   = [{ key = "api_key" }]
+}
+
+# Create a Portkey API key for your application
+resource "portkey_api_key" "backend" {
+  name         = "Backend Service Key"
+  type         = "workspace"
+  sub_type     = "service"
+  workspace_id = portkey_workspace.production.id
+  
+  scopes = [
+    "logs.list",
+    "logs.view",
+    "configs.read",
+    "providers.list"
+  ]
+}
+```
+
+### Organization User Management
+
+```hcl
 # Invite a user with workspace access
 resource "portkey_user_invite" "data_scientist" {
   email = "scientist@example.com"
@@ -118,12 +238,8 @@ resource "portkey_user_invite" "data_scientist" {
 
   workspaces = [
     {
-      id   = portkey_workspace.ml_research.id
+      id   = portkey_workspace.production.id
       role = "admin"
-    },
-    {
-      id   = portkey_workspace.engineering.id
-      role = "member"
     }
   ]
 
@@ -140,7 +256,7 @@ resource "portkey_user_invite" "data_scientist" {
 
 # Add an existing user to a workspace
 resource "portkey_workspace_member" "senior_engineer" {
-  workspace_id = portkey_workspace.engineering.id
+  workspace_id = portkey_workspace.production.id
   user_id      = "existing-user-id"
   role         = "manager"
 }
@@ -150,10 +266,6 @@ data "portkey_workspaces" "all" {}
 
 # Query all users
 data "portkey_users" "all" {}
-
-output "workspace_count" {
-  value = length(data.portkey_workspaces.all.workspaces)
-}
 ```
 
 ### Self-Hosted Portkey
@@ -169,118 +281,212 @@ provider "portkey" {
 
 ## Resources
 
-### `portkey_workspace`
+### Organization Resources
+
+#### `portkey_workspace`
 
 Manages a Portkey workspace.
 
-#### Arguments
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the workspace |
+| `description` | String | No | Description of the workspace |
 
-- `name` (Required, String) - Name of the workspace
-- `description` (Optional, String) - Description of the workspace
+**Import**: `terraform import portkey_workspace.example workspace-id`
 
-#### Attributes
-
-- `id` (String) - Workspace identifier
-- `created_at` (String) - Creation timestamp
-- `updated_at` (String) - Last update timestamp
-
-#### Import
-
-```bash
-terraform import portkey_workspace.example workspace-id
-```
-
-### `portkey_workspace_member`
+#### `portkey_workspace_member`
 
 Manages workspace membership for users.
 
-#### Arguments
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `workspace_id` | String | Yes | ID of the workspace |
+| `user_id` | String | Yes | ID of the user |
+| `role` | String | Yes | Role: `admin`, `manager`, `member` |
 
-- `workspace_id` (Required, String) - ID of the workspace
-- `user_id` (Required, String) - ID of the user
-- `role` (Required, String) - Role in the workspace (`admin`, `manager`, `member`)
+**Import**: `terraform import portkey_workspace_member.example workspace-id/member-id`
 
-#### Attributes
-
-- `id` (String) - Workspace member identifier
-- `created_at` (String) - Timestamp when member was added
-
-#### Import
-
-```bash
-terraform import portkey_workspace_member.example workspace-id/member-id
-```
-
-### `portkey_user_invite`
+#### `portkey_user_invite`
 
 Sends invitations to users.
 
-#### Arguments
-
-- `email` (Required, String) - Email address of the user to invite
-- `role` (Required, String) - Organization role (`admin`, `member`)
-- `workspaces` (Optional, List of Objects) - Workspaces to add the user to
-  - `id` (Required, String) - Workspace ID
-  - `role` (Required, String) - Role in the workspace
-- `scopes` (Optional, List of Strings) - API scopes for the user's workspace API key
-
-#### Attributes
-
-- `id` (String) - Invitation identifier
-- `status` (String) - Invitation status (`pending`, `accepted`, `expired`)
-- `created_at` (String) - Creation timestamp
-- `expires_at` (String) - Expiration timestamp
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `email` | String | Yes | Email address to invite |
+| `role` | String | Yes | Organization role: `admin`, `member` |
+| `workspaces` | List | No | Workspaces to add user to |
+| `scopes` | List | No | API scopes for the user |
 
 **Note**: User invitations cannot be updated. To change an invitation, delete and recreate it.
 
+---
+
+### AI Gateway Resources
+
+#### `portkey_integration`
+
+Manages AI provider integrations (organization-level).
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the integration |
+| `ai_provider_id` | String | Yes | Provider: `openai`, `anthropic`, `azure-openai`, etc. |
+| `key` | String | Yes | API key for the provider |
+| `description` | String | No | Description |
+
+**Import**: `terraform import portkey_integration.example integration-slug`
+
+#### `portkey_provider`
+
+Manages providers (virtual keys) - workspace-scoped API keys for AI providers.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the provider |
+| `workspace_id` | String | Yes | Workspace ID (UUID) |
+| `integration_id` | String | Yes | Integration ID to link to |
+| `note` | String | No | Notes |
+
+**Import**: `terraform import portkey_provider.example workspace-id:provider-id`
+
+#### `portkey_config`
+
+Manages gateway configurations with routing, fallbacks, and caching.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the config |
+| `workspace_id` | String | Yes | Workspace ID |
+| `config` | String (JSON) | Yes | Configuration object |
+| `is_default` | Number | No | Whether this is the default config |
+
+**Import**: `terraform import portkey_config.example config-slug`
+
+#### `portkey_prompt`
+
+Manages versioned prompt templates.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the prompt |
+| `collection_id` | String | Yes | Collection ID |
+| `string` | String | Yes | Prompt template |
+| `virtual_key` | String | Yes | Provider ID to use |
+| `model` | String | Yes | Model name |
+| `parameters` | String (JSON) | No | Model parameters |
+
+**Import**: `terraform import portkey_prompt.example prompt-slug`
+
+---
+
+### Governance Resources
+
+#### `portkey_guardrail`
+
+Manages content validation and safety checks.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the guardrail |
+| `workspace_id` | String | No | Workspace ID (or use organisation_id) |
+| `organisation_id` | String | No | Organisation ID |
+| `checks` | List | Yes | Validation checks to perform |
+| `actions` | Object | Yes | Actions on check failure |
+
+**Import**: `terraform import portkey_guardrail.example guardrail-slug`
+
+#### `portkey_usage_limits_policy`
+
+Manages spending limits and cost controls.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the policy |
+| `workspace_id` | String | Yes | Workspace ID |
+| `type` | String | Yes | `cost` or `tokens` |
+| `credit_limit` | Number | Yes | Maximum usage allowed |
+| `alert_threshold` | Number | No | Threshold for alerts |
+| `periodic_reset` | String | No | `monthly` or `weekly` |
+| `conditions` | List | Yes | Conditions to match |
+| `group_by` | List | Yes | Fields to group usage by |
+
+**Import**: `terraform import portkey_usage_limits_policy.example policy-id`
+
+#### `portkey_rate_limits_policy`
+
+Manages request rate limiting.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the policy |
+| `workspace_id` | String | Yes | Workspace ID |
+| `type` | String | Yes | `requests` or `tokens` |
+| `unit` | String | Yes | `rpm`, `rph`, or `rpd` |
+| `value` | Number | Yes | Rate limit value |
+| `conditions` | List | Yes | Conditions to match |
+| `group_by` | List | Yes | Fields to apply limits by |
+
+**Import**: `terraform import portkey_rate_limits_policy.example policy-id`
+
+---
+
+### Access Control Resources
+
+#### `portkey_api_key`
+
+Manages Portkey API keys.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `name` | String | Yes | Name of the API key |
+| `type` | String | Yes | `organisation` or `workspace` |
+| `sub_type` | String | Yes | `service` or `user` |
+| `workspace_id` | String | No | Required for workspace keys |
+| `scopes` | List | Yes | API scopes |
+
+**Import**: `terraform import portkey_api_key.example api-key-id`
+
 ## Data Sources
 
-### `portkey_workspace`
+### Organization Data Sources
 
-Fetches a single workspace by ID.
+| Data Source | Description | Key Arguments |
+|-------------|-------------|---------------|
+| `portkey_workspace` | Fetch a single workspace | `id` |
+| `portkey_workspaces` | List all workspaces | - |
+| `portkey_user` | Fetch a single user | `id` |
+| `portkey_users` | List all users | - |
 
-#### Arguments
+### AI Gateway Data Sources
 
-- `id` (Required, String) - Workspace identifier
+| Data Source | Description | Key Arguments |
+|-------------|-------------|---------------|
+| `portkey_integration` | Fetch a single integration | `slug` |
+| `portkey_integrations` | List all integrations | - |
+| `portkey_provider` | Fetch a single provider | `id`, `workspace_id` |
+| `portkey_providers` | List providers in workspace | `workspace_id` |
+| `portkey_config` | Fetch a single config | `slug` |
+| `portkey_configs` | List configs | `workspace_id` (optional) |
+| `portkey_prompt` | Fetch a single prompt | `id_or_slug` |
+| `portkey_prompts` | List prompts | `workspace_id`, `collection_id` (optional) |
 
-#### Attributes
+### Governance Data Sources
 
-- `name` (String) - Workspace name
-- `description` (String) - Workspace description
-- `created_at` (String) - Creation timestamp
-- `updated_at` (String) - Last update timestamp
+| Data Source | Description | Key Arguments |
+|-------------|-------------|---------------|
+| `portkey_guardrail` | Fetch a single guardrail | `id_or_slug` |
+| `portkey_guardrails` | List guardrails | `workspace_id` or `organisation_id` |
+| `portkey_usage_limits_policy` | Fetch a usage limits policy | `id` |
+| `portkey_usage_limits_policies` | List usage limits policies | `workspace_id` |
+| `portkey_rate_limits_policy` | Fetch a rate limits policy | `id` |
+| `portkey_rate_limits_policies` | List rate limits policies | `workspace_id` |
 
-### `portkey_workspaces`
+### Access Control Data Sources
 
-Fetches all workspaces in the organization.
-
-#### Attributes
-
-- `workspaces` (List of Objects) - List of all workspaces
-
-### `portkey_user`
-
-Fetches a single user by ID.
-
-#### Arguments
-
-- `id` (Required, String) - User identifier
-
-#### Attributes
-
-- `email` (String) - User email
-- `role` (String) - Organization role
-- `status` (String) - Account status
-- `created_at` (String) - Creation timestamp
-- `updated_at` (String) - Last update timestamp
-
-### `portkey_users`
-
-Fetches all users in the organization.
-
-#### Attributes
-
-- `users` (List of Objects) - List of all users
+| Data Source | Description | Key Arguments |
+|-------------|-------------|---------------|
+| `portkey_api_key` | Fetch a single API key | `id` |
+| `portkey_api_keys` | List API keys | `workspace_id` (optional) |
 
 ## Development
 
@@ -314,12 +520,41 @@ make generate
 
 ## API Scopes
 
-When inviting users, you can grant the following API scopes:
+When creating API keys or inviting users, you can grant scopes from these categories:
 
-- `logs.export`, `logs.list`, `logs.view` - Log access
-- `configs.create`, `configs.update`, `configs.delete`, `configs.read`, `configs.list` - Configuration management
-- `virtual_keys.create`, `virtual_keys.update`, `virtual_keys.delete`, `virtual_keys.read`, `virtual_keys.list`, `virtual_keys.copy` - Virtual key management
-- `completions.write` - Completion API access
+### Logs & Analytics
+- `logs.list`, `logs.view`, `logs.export`
+- `analytics.view`
+
+### Configs
+- `configs.create`, `configs.read`, `configs.update`, `configs.delete`, `configs.list`
+
+### Providers (Virtual Keys)
+- `providers.create`, `providers.read`, `providers.update`, `providers.delete`, `providers.list`
+- `virtual_keys.create`, `virtual_keys.read`, `virtual_keys.update`, `virtual_keys.delete`, `virtual_keys.list`, `virtual_keys.copy`
+
+### Prompts
+- `prompts.create`, `prompts.read`, `prompts.update`, `prompts.delete`, `prompts.list`, `prompts.publish`
+
+### Guardrails
+- `guardrails.create`, `guardrails.read`, `guardrails.update`, `guardrails.delete`, `guardrails.list`
+
+### Policies
+- `policies.create`, `policies.read`, `policies.update`, `policies.delete`, `policies.list`
+
+### Workspaces & Users
+- `workspaces.create`, `workspaces.read`, `workspaces.update`, `workspaces.delete`, `workspaces.list`
+- `workspace_users.create`, `workspace_users.read`, `workspace_users.update`, `workspace_users.delete`, `workspace_users.list`
+- `organisation_users.create`, `organisation_users.read`, `organisation_users.update`, `organisation_users.delete`, `organisation_users.list`
+
+### API Keys
+- `organisation_service_api_keys.create`, `organisation_service_api_keys.read`, `organisation_service_api_keys.update`, `organisation_service_api_keys.delete`, `organisation_service_api_keys.list`
+- `workspace_service_api_keys.create`, `workspace_service_api_keys.read`, `workspace_service_api_keys.update`, `workspace_service_api_keys.delete`, `workspace_service_api_keys.list`
+- `workspace_user_api_keys.create`, `workspace_user_api_keys.read`, `workspace_user_api_keys.update`, `workspace_user_api_keys.delete`, `workspace_user_api_keys.list`
+
+### Integrations
+- `organisation_integrations.create`, `organisation_integrations.read`, `organisation_integrations.update`, `organisation_integrations.delete`, `organisation_integrations.list`
+- `workspace_integrations.create`, `workspace_integrations.read`, `workspace_integrations.update`, `workspace_integrations.delete`, `workspace_integrations.list`
 
 ## Roles
 

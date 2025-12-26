@@ -1,205 +1,205 @@
 # Testing the Portkey Terraform Provider
 
-## Prerequisites
-
-1. ✅ Provider is built and installed (`make install`)
-2. A Portkey Admin API key (get from your Portkey dashboard)
-
-## Quick Test Steps
-
-### 1. Set Your API Key
+## Quick Start
 
 ```bash
-export PORTKEY_API_KEY="0a7cZ7EDNCi/HLzwfJx40W1wEM+p"
-```
-
-### 2. Initialize Terraform
-
-```bash
-terraform init
-```
-
-This will:
-- Initialize the working directory
-- Download the provider from your local installation
-- Set up the backend
-
-### 3. Validate the Configuration
-
-```bash
-terraform validate
-```
-
-This checks if your configuration is syntactically valid.
-
-### 4. Plan the Changes
-
-```bash
-terraform plan
-```
-
-This shows what Terraform will do without actually making changes. Review the output to see what resources will be created.
-
-### 5. Apply the Changes (Optional)
-
-⚠️ **Warning**: This will make real changes to your Portkey organization!
-
-```bash
-terraform apply
-```
-
-Type `yes` when prompted to create the resources.
-
-### 6. Inspect State
-
-```bash
-terraform show
-```
-
-This shows the current state of your managed infrastructure.
-
-### 7. Destroy Resources (Cleanup)
-
-```bash
-terraform destroy
-```
-
-Type `yes` to remove all created resources.
-
-## Testing Individual Resources
-
-### Test Workspace Creation
-
-Use the included `test.tf` file:
-
-```bash
-terraform init
-terraform plan
-terraform apply
-```
-
-### Test Data Sources
-
-Create a file to test reading data:
-
-```hcl
-data "portkey_workspaces" "all" {}
-
-output "all_workspaces" {
-  value = data.portkey_workspaces.all.workspaces
-}
-```
-
-Then run:
-
-```bash
-terraform plan
-```
-
-## Debugging
-
-### Enable Detailed Logging
-
-```bash
-export TF_LOG=DEBUG
-export TF_LOG_PATH=./terraform.log
-terraform plan
-```
-
-### Test in Debug Mode
-
-Run the provider in debug mode:
-
-```bash
-make build
-./terraform-provider -debug
-```
-
-Then in another terminal, use the provided reattach configuration.
-
-## Running Unit Tests
-
-If you have Go tests:
-
-```bash
-go test ./... -v
-```
-
-## Running Acceptance Tests
-
-⚠️ **Warning**: Acceptance tests make real API calls!
-
-```bash
+export PORTKEY_API_KEY="your-admin-api-key"
 make testacc
 ```
 
-Or with specific tests:
+## How Acceptance Tests Work
 
-```bash
-TF_ACC=1 go test ./... -v -run TestAccWorkspaceResource
+The `terraform-plugin-testing` framework runs **real Terraform operations** against the **live Portkey API**:
+
+```
+1. terraform apply   → Provider Create() → POST to Portkey API
+2. terraform refresh → Provider Read()   → GET from Portkey API  
+3. Check functions   → Verify Terraform state matches expectations
+4. terraform apply   → Provider Update() → PUT to Portkey API
+5. terraform destroy → Provider Delete() → DELETE from Portkey API
 ```
 
-## Common Issues
+Tests **create and destroy real resources**. Use a test/dev organization.
 
-### Provider Not Found
+## Test File Structure
 
-If you get "provider not found" errors:
+Tests live alongside the code they test (standard Go convention):
 
-1. Check the installation path:
-   ```bash
-   ls -la ~/.terraform.d/plugins/registry.terraform.io/portkey-ai/portkey/0.1.0/
-   ```
-
-2. Reinstall:
-   ```bash
-   make clean
-   make install
-   ```
-
-3. Delete Terraform cache:
-   ```bash
-   rm -rf .terraform .terraform.lock.hcl
-   terraform init
-   ```
-
-### API Authentication Errors
-
-- Verify your API key is set: `echo $PORTKEY_API_KEY`
-- Ensure the key has admin privileges
-- Check the base URL if using self-hosted Portkey
-
-### Validation Errors
-
-Run `terraform validate` to check for configuration syntax errors.
-
-## Example Test Workflow
-
-```bash
-# 1. Set up environment
-export PORTKEY_API_KEY="your-key"
-
-# 2. Clean start
-rm -rf .terraform .terraform.lock.hcl terraform.tfstate*
-
-# 3. Initialize
-terraform init
-
-# 4. Test with test.tf
-terraform plan
-
-# 5. If everything looks good, apply
-terraform apply -auto-approve
-
-# 6. Verify
-terraform show
-
-# 7. Clean up
-terraform destroy -auto-approve
+```
+internal/provider/
+├── workspace_resource.go
+├── workspace_resource_test.go      # Tests for workspace_resource.go
+├── user_invite_resource.go
+├── user_invite_resource_test.go
+└── ...
 ```
 
-## Additional Testing Resources
+## Writing Tests
 
-- Use `terraform fmt` to format your configuration files
-- Use `terraform graph | dot -Tsvg > graph.svg` to visualize dependencies
-- Check the `examples/` directory for more complex scenarios
+### Basic Test Template
 
+```go
+func TestAccResourceName_scenario(t *testing.T) {
+    rName := acctest.RandomWithPrefix("tf-acc-test")
+
+    resource.Test(t, resource.TestCase{
+        PreCheck:                 func() { testAccPreCheck(t) },
+        ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+        Steps: []resource.TestStep{
+            // Step 1: Create
+            {
+                Config: testAccResourceConfig(rName),
+                Check: resource.ComposeAggregateTestCheckFunc(
+                    resource.TestCheckResourceAttrSet("portkey_resource.test", "id"),
+                    resource.TestCheckResourceAttr("portkey_resource.test", "name", rName),
+                ),
+            },
+            // Step 2: Import
+            {
+                ResourceName:            "portkey_resource.test",
+                ImportState:             true,
+                ImportStateVerify:       true,
+                ImportStateVerifyIgnore: []string{"sensitive_field"},
+            },
+            // Step 3: Update
+            {
+                Config: testAccResourceConfigUpdated(rName),
+                Check: resource.ComposeAggregateTestCheckFunc(
+                    resource.TestCheckResourceAttr("portkey_resource.test", "name", rName+"-updated"),
+                ),
+            },
+            // Step 4: Delete happens automatically
+        },
+    })
+}
+
+func testAccResourceConfig(name string) string {
+    return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_resource" "test" {
+  name = %[1]q
+}
+`, name)
+}
+```
+
+### Common Check Functions
+
+```go
+// Attribute exists
+resource.TestCheckResourceAttrSet("portkey_workspace.test", "id")
+
+// Exact value
+resource.TestCheckResourceAttr("portkey_workspace.test", "name", "expected")
+
+// Compare two resources
+resource.TestCheckResourceAttrPair(
+    "data.portkey_workspace.test", "name",
+    "portkey_workspace.test", "name",
+)
+
+// List length
+resource.TestCheckResourceAttr("portkey_user_invite.test", "workspaces.#", "2")
+
+// Nested attribute
+resource.TestCheckResourceAttr("portkey_user_invite.test", "workspaces.0.role", "admin")
+```
+
+### Using Data Sources in Tests
+
+To get dynamic values (like existing user IDs), use data sources:
+
+```go
+func testAccWorkspaceMemberConfig(workspaceName, role string) string {
+    return fmt.Sprintf(`
+provider "portkey" {}
+
+data "portkey_users" "all" {}
+
+resource "portkey_workspace" "test" {
+  name = %[1]q
+}
+
+resource "portkey_workspace_member" "test" {
+  workspace_id = portkey_workspace.test.id
+  user_id      = data.portkey_users.all.users[0].id
+  role         = %[2]q
+}
+`, workspaceName, role)
+}
+```
+
+### Skipping Tests
+
+Skip tests when prerequisites aren't met or APIs have known issues:
+
+```go
+func TestAccFeature_basic(t *testing.T) {
+    t.Skip("Skipping: API endpoint has known bug - see issue #123")
+    // ...
+}
+```
+
+## Running Tests
+
+```bash
+# All acceptance tests
+make testacc
+
+# Specific test
+TF_ACC=1 go test ./internal/provider -v -run TestAccWorkspaceResource_basic
+
+# With debug logging
+TF_ACC=1 TF_LOG=DEBUG go test ./internal/provider -v -run TestAccWorkspaceResource_basic
+
+# Unit tests only (no API calls)
+go test ./internal/provider -v -run TestProvider_Has
+```
+
+## Best Practices
+
+1. **Random names** - Use `acctest.RandomWithPrefix("tf-acc-")` to avoid conflicts
+2. **Test full lifecycle** - Create → Read → Update → Import → Delete
+3. **Isolate tests** - Each test creates/destroys its own resources
+4. **Check computed fields** - Verify `id`, `created_at`, etc. are set
+5. **Ignore timestamps on import** - Use `ImportStateVerifyIgnore` for fields that may differ
+
+## Debugging
+
+```bash
+# Enable Terraform debug logs
+export TF_LOG=DEBUG
+export TF_LOG_PATH=./terraform.log
+
+# Disable test caching
+TF_ACC=1 go test ./internal/provider -v -run TestName -count=1
+```
+
+## Current Test Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Workspace Resource | ✅ Passing | Full CRUD + Import |
+| User Invite Resource | ✅ Passing | With workspaces and scopes |
+| Workspace Data Source | ✅ Passing | |
+| Workspaces Data Source | ✅ Passing | |
+| User Data Source | ✅ Passing | |
+| Users Data Source | ✅ Passing | |
+| Workspace Member Resource | ⏸️ Skipped | Blocked by API bug in `getMember` endpoint |
+
+## Troubleshooting
+
+**Provider not found:**
+```bash
+make clean && make install
+rm -rf .terraform .terraform.lock.hcl && terraform init
+```
+
+**API auth errors:**
+- Verify: `echo $PORTKEY_API_KEY`
+- Ensure key has admin privileges
+
+**Orphaned resources:**
+- Check Portkey dashboard
+- Delete manually via API/dashboard
