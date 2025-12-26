@@ -31,7 +31,7 @@ output "development_workspace" {
 output "pending_invitations" {
   description = "Status of all user invitations"
   value = {
-    engineering_lead  = portkey_user_invite.eng_lead.status
+    engineering_lead = portkey_user_invite.eng_lead.status
     ml_lead          = portkey_user_invite.ml_lead.status
     analyst          = portkey_user_invite.analyst.status
     backend_engineer = portkey_user_invite.backend_engineer.status
