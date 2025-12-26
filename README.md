@@ -569,6 +569,33 @@ When creating API keys or inviting users, you can grant scopes from these catego
 - `manager` - Manage workspace resources and members
 - `member` - Standard workspace access
 
+## Known Issues
+
+### Workspace Deletion (API Issue)
+Workspaces may fail to delete with error: `409: Unable to delete. Please ensure that all Virtual Keys are deleted`. This occurs even for newly created workspaces due to auto-provisioned resources on the backend.
+
+**Workaround**: Manually delete all providers/virtual keys in the workspace before destroying.
+
+### Workspace Member Read (API Issue)
+The workspace member `getMember` endpoint returns inconsistent data, which can cause Terraform state drift.
+
+**Status**: Tests are skipped; resource works for create/update/delete operations.
+
+### User Resource (API Limitation)
+The user update API rejects requests when updating to the same role value.
+
+**Impact**: User resource is read-only (data source only). Use `portkey_user_invite` to manage user access.
+
+### User Invite Updates (API Design)
+User invitations cannot be updated - there is no PUT endpoint.
+
+**Workaround**: Delete and recreate the invitation to modify it.
+
+### Prompt Template Updates (API Behavior)
+Updating a prompt's template or parameters creates a new version rather than updating in place. The new version is not automatically set as the default.
+
+**Workaround**: Name updates work reliably. For template changes, use the Portkey UI or API directly to manage versions.
+
 ## Contributing
 
 Contributions are welcome! Please:
