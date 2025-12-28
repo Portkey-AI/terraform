@@ -580,6 +580,119 @@ When creating API keys or inviting users, you can grant scopes from these catego
 - `manager` - Manage workspace resources and members
 - `member` - Standard workspace access
 
+## Resource Prerequisites
+
+Some resources have specific prerequisites that must be met before they can be created.
+
+### `portkey_provider` (Virtual Key)
+
+To create a provider, you need:
+
+1. **A workspace ID** (UUID format, not slug)
+2. **An integration that is enabled for that workspace**
+
+```hcl
+# First, create or reference an integration
+resource "portkey_integration" "openai" {
+  name           = "OpenAI"
+  ai_provider_id = "openai"
+  key            = var.openai_api_key
+}
+
+# Then create a provider linked to the integration
+resource "portkey_provider" "main" {
+  name           = "Production OpenAI"
+  workspace_id   = "9da48f29-e564-4bcd-8480-757803acf5ae"  # Must be UUID
+  integration_id = portkey_integration.openai.slug
+}
+```
+
+**Common error**: `403 Forbidden` - The integration is not enabled for the specified workspace. Enable it in Portkey UI first.
+
+### `portkey_api_key`
+
+API keys require at least one scope:
+
+```hcl
+resource "portkey_api_key" "backend" {
+  name     = "Backend Service"
+  type     = "organisation"  # or "workspace"
+  sub_type = "service"       # or "user"
+  scopes   = ["providers.list", "logs.view"]  # Required - at least one scope
+}
+```
+
+**Common error**: `502 Bad Gateway` - No scopes provided. Always include at least one scope.
+
+### `portkey_guardrail`, `portkey_usage_limits_policy`, `portkey_rate_limits_policy`
+
+These resources require JSON-encoded fields:
+
+```hcl
+# Use jsonencode() for complex fields
+resource "portkey_guardrail" "example" {
+  name         = "Content Filter"
+  workspace_id = var.workspace_id
+  
+  checks = jsonencode([
+    {
+      id = "default.wordCount"
+      parameters = { minWords = 1, maxWords = 5000 }
+    }
+  ])
+  
+  actions = jsonencode({
+    onFail  = "block"
+    message = "Validation failed"
+  })
+}
+```
+
+**Common error**: `400 Bad Request` - Using HCL syntax instead of `jsonencode()`.
+
+## Troubleshooting
+
+### 403 Forbidden Errors
+
+| Resource | Cause | Solution |
+|----------|-------|----------|
+| `portkey_provider` | Integration not enabled for workspace | Enable integration for workspace in Portkey UI |
+| `portkey_api_key` | Admin key lacks required scopes | Use an admin key with full permissions |
+| Any resource | Workspace access not granted | Ensure your admin key has workspace access |
+
+### 404 Not Found Errors
+
+| Resource | Cause | Solution |
+|----------|-------|----------|
+| `portkey_api_key` | Self-hosted API route differences | Verify `base_url` is correct for your deployment |
+| Any resource | Resource was deleted externally | Run `terraform refresh` to sync state |
+
+### 400 Bad Request Errors
+
+| Resource | Cause | Solution |
+|----------|-------|----------|
+| Policies | Empty `conditions` array | Provide at least one condition: `jsonencode([{key="workspace_id", value="..."}])` |
+| Guardrails | Invalid check format | Use `jsonencode()` for `checks` and `actions` |
+| Configs | Invalid config JSON | Ensure `config` field contains valid JSON |
+
+### State Drift Issues
+
+If Terraform shows unexpected diffs on every plan:
+
+1. **Config resource**: The API may normalize JSON differently. Use consistent formatting.
+2. **Prompt resource**: Template updates create new versions. Use name-only updates.
+
+### Self-Hosted Portkey
+
+For self-hosted deployments, ensure `base_url` points to your instance:
+
+```hcl
+provider "portkey" {
+  api_key  = var.portkey_api_key
+  base_url = "https://your-portkey-instance.com/v1"
+}
+```
+
 ## Known Issues
 
 ### Workspace Deletion (API Issue)
