@@ -171,7 +171,8 @@ resource "portkey_guardrail" "content_filter" {
   name         = "Content Filter"
   workspace_id = portkey_workspace.production.id
   
-  checks = [
+  # checks and actions must be JSON-encoded
+  checks = jsonencode([
     {
       id = "default.wordCount"
       parameters = {
@@ -179,12 +180,12 @@ resource "portkey_guardrail" "content_filter" {
         maxWords = 5000
       }
     }
-  ]
+  ])
   
-  actions = {
+  actions = jsonencode({
     onFail  = "block"
     message = "Content validation failed"
-  }
+  })
 }
 
 # Create a usage limits policy
@@ -196,8 +197,13 @@ resource "portkey_usage_limits_policy" "cost_limit" {
   alert_threshold = 800.0
   periodic_reset = "monthly"
   
-  conditions = []
-  group_by   = [{ key = "api_key" }]
+  # conditions and group_by must be JSON-encoded arrays
+  conditions = jsonencode([
+    { key = "workspace_id", value = portkey_workspace.production.id }
+  ])
+  group_by = jsonencode([
+    { key = "api_key" }
+  ])
 }
 
 # Create a rate limits policy
@@ -208,8 +214,13 @@ resource "portkey_rate_limits_policy" "api_rate" {
   unit         = "rpm"
   value        = 100
   
-  conditions = []
-  group_by   = [{ key = "api_key" }]
+  # conditions and group_by must be JSON-encoded arrays
+  conditions = jsonencode([
+    { key = "workspace_id", value = portkey_workspace.production.id }
+  ])
+  group_by = jsonencode([
+    { key = "api_key" }
+  ])
 }
 
 # Create a Portkey API key for your application
