@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -215,30 +214,13 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 
-	// Fetch the current workspace to get the actual name from the API.
-	// This handles cases where the workspace name was changed outside of Terraform
-	// (e.g., via UI), which would cause the delete to fail with "Invalid value" for name
-	// since the API requires the current name as confirmation.
-	workspace, err := r.client.GetWorkspace(ctx, state.ID.ValueString())
-	if err != nil {
-		// If we can't fetch the workspace, it might already be deleted
-		// Check if it's a 404 error and consider it success
-		if isNotFoundError(err) {
-			return
-		}
-		resp.Diagnostics.AddError(
-			"Error Reading Portkey Workspace for Deletion",
-			"Could not read workspace to get current name: "+err.Error(),
-		)
-		return
-	}
-
-	// Delete existing workspace using the current name from the API
-	err = r.client.DeleteWorkspace(ctx, state.ID.ValueString(), workspace.Name)
+	// Delete existing workspace (API requires name in body as confirmation)
+	err := r.client.DeleteWorkspace(ctx, state.ID.ValueString(), state.Name.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Deleting Portkey Workspace",
-			"Could not delete workspace, unexpected error: "+err.Error(),
+			"Could not delete workspace: "+err.Error()+
+				"\n\nIf the workspace name was changed outside of Terraform, run 'terraform refresh' to sync the state first.",
 		)
 		return
 	}
@@ -248,12 +230,4 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 func (r *workspaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	// Retrieve import ID and save to id attribute
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
-}
-
-// isNotFoundError checks if an error indicates a resource was not found (404).
-func isNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "404")
 }

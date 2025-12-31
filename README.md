@@ -695,10 +695,17 @@ provider "portkey" {
 
 ## Known Issues
 
-### Workspace Deletion (API Issue)
+### Workspace Deletion - Virtual Keys Block (API Issue)
 Workspaces may fail to delete with error: `409: Unable to delete. Please ensure that all Virtual Keys are deleted`. This occurs even for newly created workspaces due to auto-provisioned resources on the backend.
 
 **Workaround**: Manually delete all providers/virtual keys in the workspace before destroying.
+
+### Workspace Deletion - Emoji Names (API Issue)
+Workspaces with emoji characters in the name may fail to delete with error: `Invalid value` for the `name` parameter. The API's DELETE endpoint appears to have stricter validation than create/update endpoints.
+
+**Workaround**: Rename the workspace to remove emoji characters before deleting, or delete via the Portkey UI.
+
+**Note**: If deletion fails with "Invalid value" for name, first try running `terraform refresh` to sync state, then retry the destroy.
 
 ### Workspace Member Read (API Issue)
 The workspace member `getMember` endpoint returns inconsistent data, which can cause Terraform state drift.
