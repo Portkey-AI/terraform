@@ -186,7 +186,7 @@ func (r *guardrailResource) Create(ctx context.Context, req resource.CreateReque
 	}
 
 	// Map response body to schema
-	r.mapGuardrailToState(&plan, guardrail)
+	r.mapGuardrailToState(&plan, guardrail, false)
 
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
@@ -220,7 +220,7 @@ func (r *guardrailResource) Read(ctx context.Context, req resource.ReadRequest, 
 	oldChecks := state.Checks
 	oldActions := state.Actions
 
-	r.mapGuardrailToState(&state, guardrail)
+	r.mapGuardrailToState(&state, guardrail, true)
 
 	// Compare and preserve formatting if semantically equal
 	state.Checks = r.preserveJSONFormatting(oldChecks.ValueString(), state.Checks.ValueString())
@@ -294,7 +294,7 @@ func (r *guardrailResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 
 	// Map response to plan
-	r.mapGuardrailToState(&plan, guardrail)
+	r.mapGuardrailToState(&plan, guardrail, false)
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -331,11 +331,15 @@ func (r *guardrailResource) ImportState(ctx context.Context, req resource.Import
 }
 
 // mapGuardrailToState maps a Guardrail API response to the Terraform state model
-func (r *guardrailResource) mapGuardrailToState(state *guardrailResourceModel, guardrail *client.Guardrail) {
+// preserveRequiresReplace controls whether to preserve state values for RequiresReplace attributes
+func (r *guardrailResource) mapGuardrailToState(state *guardrailResourceModel, guardrail *client.Guardrail, preserveRequiresReplace bool) {
 	state.ID = types.StringValue(guardrail.ID)
 	state.Slug = types.StringValue(guardrail.Slug)
 	state.Name = types.StringValue(guardrail.Name)
-	state.WorkspaceID = types.StringValue(guardrail.WorkspaceID)
+	// Preserve workspace_id from state to avoid triggering RequiresReplace unnecessarily
+	if !preserveRequiresReplace || state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
+		state.WorkspaceID = types.StringValue(guardrail.WorkspaceID)
+	}
 	state.Status = types.StringValue(guardrail.Status)
 	state.VersionID = types.StringValue(guardrail.VersionID)
 

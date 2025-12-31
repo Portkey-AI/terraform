@@ -224,13 +224,19 @@ func (r *providerResource) Read(ctx context.Context, req resource.ReadRequest, r
 
 	// Overwrite items with refreshed state
 	state.Name = types.StringValue(provider.Name)
-	state.Slug = types.StringValue(provider.Slug)
+	// Preserve slug from state to avoid triggering RequiresReplace unnecessarily
+	if state.Slug.IsNull() || state.Slug.IsUnknown() {
+		state.Slug = types.StringValue(provider.Slug)
+	}
 	state.Status = types.StringValue(provider.Status)
 	state.AIProviderID = types.StringValue(provider.AIProviderID)
 	state.CreatedAt = types.StringValue(provider.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
 
-	if provider.IntegrationID != "" {
-		state.IntegrationID = types.StringValue(provider.IntegrationID)
+	// Preserve integration_id from state to avoid triggering RequiresReplace unnecessarily
+	if state.IntegrationID.IsNull() || state.IntegrationID.IsUnknown() {
+		if provider.IntegrationID != "" {
+			state.IntegrationID = types.StringValue(provider.IntegrationID)
+		}
 	}
 
 	if provider.Note != "" {

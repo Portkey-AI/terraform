@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Critical: Resources no longer unnecessarily recreated on every apply** - Fixed a bug where `RequiresReplace` attributes (like `workspace_id`) were being overwritten during `Read()` operations, causing Terraform to detect false changes and trigger destroy/create cycles. Affected resources:
+  - `portkey_config`
+  - `portkey_guardrail`
+  - `portkey_provider`
+  - `portkey_prompt`
+  - `portkey_integration`
+  - `portkey_api_key`
+  - `portkey_user_invite`
+  - `portkey_rate_limits_policy`
+  - `portkey_usage_limits_policy`
+
 ### Added
 - **AI Gateway Resources:**
   - `portkey_integration` - Manage AI provider integrations (OpenAI, Anthropic, Azure, etc.)

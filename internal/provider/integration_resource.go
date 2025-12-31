@@ -213,9 +213,15 @@ func (r *integrationResource) Read(ctx context.Context, req resource.ReadRequest
 
 	// Overwrite items with refreshed state
 	state.ID = types.StringValue(integration.ID)
-	state.Slug = types.StringValue(integration.Slug)
+	// Preserve slug from state to avoid triggering RequiresReplace unnecessarily
+	if state.Slug.IsNull() || state.Slug.IsUnknown() {
+		state.Slug = types.StringValue(integration.Slug)
+	}
 	state.Name = types.StringValue(integration.Name)
-	state.AIProviderID = types.StringValue(integration.AIProviderID)
+	// Preserve ai_provider_id from state to avoid triggering RequiresReplace unnecessarily
+	if state.AIProviderID.IsNull() || state.AIProviderID.IsUnknown() {
+		state.AIProviderID = types.StringValue(integration.AIProviderID)
+	}
 	state.Status = types.StringValue(integration.Status)
 	if integration.Description != "" {
 		state.Description = types.StringValue(integration.Description)

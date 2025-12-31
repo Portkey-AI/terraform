@@ -234,7 +234,10 @@ func (r *configResource) Read(ctx context.Context, req resource.ReadRequest, res
 	state.ID = types.StringValue(config.ID)
 	state.Slug = types.StringValue(config.Slug)
 	state.Name = types.StringValue(config.Name)
-	state.WorkspaceID = types.StringValue(config.WorkspaceID)
+	// Preserve workspace_id from state to avoid triggering RequiresReplace unnecessarily
+	if state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
+		state.WorkspaceID = types.StringValue(config.WorkspaceID)
+	}
 	state.IsDefault = types.BoolValue(config.IsDefault == 1)
 	state.Status = types.StringValue(config.Status)
 	state.VersionID = types.StringValue(config.VersionID)

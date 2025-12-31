@@ -256,9 +256,13 @@ func (r *userInviteResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	// Overwrite items with refreshed state
-	state.Email = types.StringValue(invite.Email)
-	state.Role = types.StringValue(invite.Role)
+	// Preserve email and role from state to avoid triggering RequiresReplace unnecessarily
+	if state.Email.IsNull() || state.Email.IsUnknown() {
+		state.Email = types.StringValue(invite.Email)
+	}
+	if state.Role.IsNull() || state.Role.IsUnknown() {
+		state.Role = types.StringValue(invite.Role)
+	}
 	state.Status = types.StringValue(invite.Status)
 	state.CreatedAt = types.StringValue(invite.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
 	state.ExpiresAt = types.StringValue(invite.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"))

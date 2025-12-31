@@ -200,7 +200,7 @@ func (r *rateLimitsPolicyResource) Create(ctx context.Context, req resource.Crea
 	}
 
 	// Map response body to schema
-	r.mapPolicyToState(&plan, policy)
+	r.mapPolicyToState(&plan, policy, false)
 
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
@@ -234,7 +234,7 @@ func (r *rateLimitsPolicyResource) Read(ctx context.Context, req resource.ReadRe
 	oldConditions := state.Conditions
 	oldGroupBy := state.GroupBy
 
-	r.mapPolicyToState(&state, policy)
+	r.mapPolicyToState(&state, policy, true)
 
 	// Keep original formatting if semantically equal
 	state.Conditions = preserveJSONFormatting(oldConditions.ValueString(), state.Conditions.ValueString())
@@ -292,7 +292,7 @@ func (r *rateLimitsPolicyResource) Update(ctx context.Context, req resource.Upda
 	}
 
 	// Map response to plan
-	r.mapPolicyToState(&plan, policy)
+	r.mapPolicyToState(&plan, policy, false)
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -328,28 +328,39 @@ func (r *rateLimitsPolicyResource) ImportState(ctx context.Context, req resource
 }
 
 // mapPolicyToState maps a RateLimitsPolicy API response to the Terraform state model
-func (r *rateLimitsPolicyResource) mapPolicyToState(state *rateLimitsPolicyResourceModel, policy *client.RateLimitsPolicy) {
+// preserveRequiresReplace controls whether to preserve state values for RequiresReplace attributes
+func (r *rateLimitsPolicyResource) mapPolicyToState(state *rateLimitsPolicyResourceModel, policy *client.RateLimitsPolicy, preserveRequiresReplace bool) {
 	state.ID = types.StringValue(policy.ID)
 	state.Name = types.StringValue(policy.Name)
-	state.WorkspaceID = types.StringValue(policy.WorkspaceID)
-	state.Type = types.StringValue(policy.Type)
+	// Preserve workspace_id from state to avoid triggering RequiresReplace unnecessarily
+	if !preserveRequiresReplace || state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
+		state.WorkspaceID = types.StringValue(policy.WorkspaceID)
+	}
+	// Preserve type from state to avoid triggering RequiresReplace unnecessarily
+	if !preserveRequiresReplace || state.Type.IsNull() || state.Type.IsUnknown() {
+		state.Type = types.StringValue(policy.Type)
+	}
 	state.Unit = types.StringValue(policy.Unit)
 	state.Value = types.Float64Value(policy.Value)
 	state.Status = types.StringValue(policy.Status)
 
-	// Convert conditions to JSON string
-	if policy.Conditions != nil {
-		conditionsBytes, err := json.Marshal(policy.Conditions)
-		if err == nil {
-			state.Conditions = types.StringValue(string(conditionsBytes))
+	// Convert conditions to JSON string - preserve from state if set (RequiresReplace)
+	if !preserveRequiresReplace || state.Conditions.IsNull() || state.Conditions.IsUnknown() {
+		if policy.Conditions != nil {
+			conditionsBytes, err := json.Marshal(policy.Conditions)
+			if err == nil {
+				state.Conditions = types.StringValue(string(conditionsBytes))
+			}
 		}
 	}
 
-	// Convert group_by to JSON string
-	if policy.GroupBy != nil {
-		groupByBytes, err := json.Marshal(policy.GroupBy)
-		if err == nil {
-			state.GroupBy = types.StringValue(string(groupByBytes))
+	// Convert group_by to JSON string - preserve from state if set (RequiresReplace)
+	if !preserveRequiresReplace || state.GroupBy.IsNull() || state.GroupBy.IsUnknown() {
+		if policy.GroupBy != nil {
+			groupByBytes, err := json.Marshal(policy.GroupBy)
+			if err == nil {
+				state.GroupBy = types.StringValue(string(groupByBytes))
+			}
 		}
 	}
 

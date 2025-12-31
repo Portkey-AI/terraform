@@ -308,21 +308,32 @@ func (r *apiKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 	state.OrganisationID = types.StringValue(apiKey.OrganisationID)
 	state.Status = types.StringValue(apiKey.Status)
 
-	// Parse and set type/subtype from combined type field
-	parsedType, parsedSubType := parseAPIKeyType(apiKey.Type)
-	state.Type = types.StringValue(parsedType)
-	state.SubType = types.StringValue(parsedSubType)
+	// Preserve type/sub_type from state to avoid triggering RequiresReplace unnecessarily
+	if state.Type.IsNull() || state.Type.IsUnknown() {
+		parsedType, _ := parseAPIKeyType(apiKey.Type)
+		state.Type = types.StringValue(parsedType)
+	}
+	if state.SubType.IsNull() || state.SubType.IsUnknown() {
+		_, parsedSubType := parseAPIKeyType(apiKey.Type)
+		state.SubType = types.StringValue(parsedSubType)
+	}
 
 	if apiKey.Description != "" {
 		state.Description = types.StringValue(apiKey.Description)
 	}
 
-	if apiKey.WorkspaceID != "" {
-		state.WorkspaceID = types.StringValue(apiKey.WorkspaceID)
+	// Preserve workspace_id from state to avoid triggering RequiresReplace unnecessarily
+	if state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
+		if apiKey.WorkspaceID != "" {
+			state.WorkspaceID = types.StringValue(apiKey.WorkspaceID)
+		}
 	}
 
-	if apiKey.UserID != "" {
-		state.UserID = types.StringValue(apiKey.UserID)
+	// Preserve user_id from state to avoid triggering RequiresReplace unnecessarily
+	if state.UserID.IsNull() || state.UserID.IsUnknown() {
+		if apiKey.UserID != "" {
+			state.UserID = types.StringValue(apiKey.UserID)
+		}
 	}
 
 	// Handle scopes

@@ -216,7 +216,7 @@ func (r *usageLimitsPolicyResource) Create(ctx context.Context, req resource.Cre
 	}
 
 	// Map response body to schema
-	r.mapPolicyToState(&plan, policy)
+	r.mapPolicyToState(&plan, policy, false)
 
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
@@ -250,7 +250,7 @@ func (r *usageLimitsPolicyResource) Read(ctx context.Context, req resource.ReadR
 	oldConditions := state.Conditions
 	oldGroupBy := state.GroupBy
 
-	r.mapPolicyToState(&state, policy)
+	r.mapPolicyToState(&state, policy, true)
 
 	// Keep original formatting if semantically equal
 	state.Conditions = preserveJSONFormatting(oldConditions.ValueString(), state.Conditions.ValueString())
@@ -311,7 +311,7 @@ func (r *usageLimitsPolicyResource) Update(ctx context.Context, req resource.Upd
 	}
 
 	// Map response to plan
-	r.mapPolicyToState(&plan, policy)
+	r.mapPolicyToState(&plan, policy, false)
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -347,11 +347,18 @@ func (r *usageLimitsPolicyResource) ImportState(ctx context.Context, req resourc
 }
 
 // mapPolicyToState maps a UsageLimitsPolicy API response to the Terraform state model
-func (r *usageLimitsPolicyResource) mapPolicyToState(state *usageLimitsPolicyResourceModel, policy *client.UsageLimitsPolicy) {
+// preserveRequiresReplace controls whether to preserve state values for RequiresReplace attributes
+func (r *usageLimitsPolicyResource) mapPolicyToState(state *usageLimitsPolicyResourceModel, policy *client.UsageLimitsPolicy, preserveRequiresReplace bool) {
 	state.ID = types.StringValue(policy.ID)
 	state.Name = types.StringValue(policy.Name)
-	state.WorkspaceID = types.StringValue(policy.WorkspaceID)
-	state.Type = types.StringValue(policy.Type)
+	// Preserve workspace_id from state to avoid triggering RequiresReplace unnecessarily
+	if !preserveRequiresReplace || state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
+		state.WorkspaceID = types.StringValue(policy.WorkspaceID)
+	}
+	// Preserve type from state to avoid triggering RequiresReplace unnecessarily
+	if !preserveRequiresReplace || state.Type.IsNull() || state.Type.IsUnknown() {
+		state.Type = types.StringValue(policy.Type)
+	}
 	state.CreditLimit = types.Float64Value(policy.CreditLimit)
 	state.Status = types.StringValue(policy.Status)
 
@@ -361,25 +368,32 @@ func (r *usageLimitsPolicyResource) mapPolicyToState(state *usageLimitsPolicyRes
 		state.AlertThreshold = types.Float64Null()
 	}
 
-	if policy.PeriodicReset != "" {
-		state.PeriodicReset = types.StringValue(policy.PeriodicReset)
-	} else {
-		state.PeriodicReset = types.StringNull()
-	}
-
-	// Convert conditions to JSON string
-	if policy.Conditions != nil {
-		conditionsBytes, err := json.Marshal(policy.Conditions)
-		if err == nil {
-			state.Conditions = types.StringValue(string(conditionsBytes))
+	// Preserve periodic_reset from state to avoid triggering RequiresReplace unnecessarily
+	if !preserveRequiresReplace || state.PeriodicReset.IsNull() || state.PeriodicReset.IsUnknown() {
+		if policy.PeriodicReset != "" {
+			state.PeriodicReset = types.StringValue(policy.PeriodicReset)
+		} else {
+			state.PeriodicReset = types.StringNull()
 		}
 	}
 
-	// Convert group_by to JSON string
-	if policy.GroupBy != nil {
-		groupByBytes, err := json.Marshal(policy.GroupBy)
-		if err == nil {
-			state.GroupBy = types.StringValue(string(groupByBytes))
+	// Convert conditions to JSON string - preserve from state if set (RequiresReplace)
+	if !preserveRequiresReplace || state.Conditions.IsNull() || state.Conditions.IsUnknown() {
+		if policy.Conditions != nil {
+			conditionsBytes, err := json.Marshal(policy.Conditions)
+			if err == nil {
+				state.Conditions = types.StringValue(string(conditionsBytes))
+			}
+		}
+	}
+
+	// Convert group_by to JSON string - preserve from state if set (RequiresReplace)
+	if !preserveRequiresReplace || state.GroupBy.IsNull() || state.GroupBy.IsUnknown() {
+		if policy.GroupBy != nil {
+			groupByBytes, err := json.Marshal(policy.GroupBy)
+			if err == nil {
+				state.GroupBy = types.StringValue(string(groupByBytes))
+			}
 		}
 	}
 

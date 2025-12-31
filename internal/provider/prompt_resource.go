@@ -424,7 +424,10 @@ func (r *promptResource) mapPromptToState(state *promptResourceModel, prompt *cl
 	state.ID = types.StringValue(prompt.ID)
 	state.Slug = types.StringValue(prompt.Slug)
 	state.Name = types.StringValue(prompt.Name)
-	state.CollectionID = types.StringValue(prompt.CollectionID)
+	// Preserve collection_id from state to avoid triggering RequiresReplace unnecessarily
+	if state.CollectionID.IsNull() || state.CollectionID.IsUnknown() {
+		state.CollectionID = types.StringValue(prompt.CollectionID)
+	}
 	state.Template = types.StringValue(prompt.String)
 	state.Model = types.StringValue(prompt.Model)
 	// Keep the user-provided virtual_key value (API returns slug but user may have provided ID)
