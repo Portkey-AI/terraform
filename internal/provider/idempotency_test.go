@@ -574,4 +574,3 @@ func TestAllResources_BuggyBehavior_CausesReplacements(t *testing.T) {
 		t.Error("Expected to find bugs in the old behavior, but found none!")
 	}
 }
-
