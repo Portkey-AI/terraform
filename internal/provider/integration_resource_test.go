@@ -30,9 +30,9 @@ func TestAccIntegrationResource_basic(t *testing.T) {
 			},
 			// ImportState testing
 			{
-				ResourceName:            "portkey_integration.test",
-				ImportState:             true,
-				ImportStateVerify:       true,
+				ResourceName:      "portkey_integration.test",
+				ImportState:       true,
+				ImportStateVerify: true,
 				// key: write-only
 				// slug: BUG - API returns UUID instead of original slug on GET (needs investigation)
 				// updated_at: timestamp may change between operations

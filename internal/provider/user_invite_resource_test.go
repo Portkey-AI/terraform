@@ -28,9 +28,9 @@ func TestAccUserInviteResource_basic(t *testing.T) {
 			},
 			// ImportState testing
 			{
-				ResourceName:            "portkey_user_invite.test",
-				ImportState:             true,
-				ImportStateVerify:       true,
+				ResourceName:      "portkey_user_invite.test",
+				ImportState:       true,
+				ImportStateVerify: true,
 				// Ignored fields explained:
 				// - scopes: API doesn't return scopes on GET invite
 				// - status: computed by API, not from config

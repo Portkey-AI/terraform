@@ -8,6 +8,7 @@ linters:
     - bodyclose     # Checks HTTP response body is closed
     - gofmt         # Checks formatting
     - goimports     # Checks imports formatting
+    - errcheck      # Checks unchecked errors
 
 issues:
   max-issues-per-linter: 0

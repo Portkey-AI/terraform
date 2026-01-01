@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -32,15 +33,16 @@ type integrationResource struct {
 
 // integrationResourceModel maps the resource schema data.
 type integrationResourceModel struct {
-	ID           types.String `tfsdk:"id"`
-	Slug         types.String `tfsdk:"slug"`
-	Name         types.String `tfsdk:"name"`
-	AIProviderID types.String `tfsdk:"ai_provider_id"`
-	Key          types.String `tfsdk:"key"`
-	Description  types.String `tfsdk:"description"`
-	Status       types.String `tfsdk:"status"`
-	CreatedAt    types.String `tfsdk:"created_at"`
-	UpdatedAt    types.String `tfsdk:"updated_at"`
+	ID             types.String `tfsdk:"id"`
+	Slug           types.String `tfsdk:"slug"`
+	Name           types.String `tfsdk:"name"`
+	AIProviderID   types.String `tfsdk:"ai_provider_id"`
+	Key            types.String `tfsdk:"key"`
+	Configurations types.String `tfsdk:"configurations"`
+	Description    types.String `tfsdk:"description"`
+	Status         types.String `tfsdk:"status"`
+	CreatedAt      types.String `tfsdk:"created_at"`
+	UpdatedAt      types.String `tfsdk:"updated_at"`
 }
 
 // Metadata returns the resource type name.
@@ -82,6 +84,11 @@ func (r *integrationResource) Schema(_ context.Context, _ resource.SchemaRequest
 			},
 			"key": schema.StringAttribute{
 				Description: "API key for the provider. This is write-only and will not be returned by the API.",
+				Optional:    true,
+				Sensitive:   true,
+			},
+			"configurations": schema.StringAttribute{
+				Description: "Provider-specific configurations as JSON. For AWS Bedrock with IAM Role, use: jsonencode({aws_role_arn = \"arn:aws:iam::...\", aws_region = \"us-east-1\"}). For Azure OpenAI: jsonencode({resource_name = \"...\", deployment_id = \"...\", api_version = \"...\"}). This is write-only and will not be returned by the API.",
 				Optional:    true,
 				Sensitive:   true,
 			},
@@ -147,6 +154,18 @@ func (r *integrationResource) Create(ctx context.Context, req resource.CreateReq
 
 	if !plan.Key.IsNull() && !plan.Key.IsUnknown() {
 		createReq.Key = plan.Key.ValueString()
+	}
+
+	if !plan.Configurations.IsNull() && !plan.Configurations.IsUnknown() {
+		var configurations map[string]interface{}
+		if err := json.Unmarshal([]byte(plan.Configurations.ValueString()), &configurations); err != nil {
+			resp.Diagnostics.AddError(
+				"Invalid configurations JSON",
+				"Could not parse configurations: "+err.Error(),
+			)
+			return
+		}
+		createReq.Configurations = configurations
 	}
 
 	if !plan.Description.IsNull() && !plan.Description.IsUnknown() {
@@ -264,6 +283,18 @@ func (r *integrationResource) Update(ctx context.Context, req resource.UpdateReq
 
 	if !plan.Key.IsNull() && !plan.Key.IsUnknown() {
 		updateReq.Key = plan.Key.ValueString()
+	}
+
+	if !plan.Configurations.IsNull() && !plan.Configurations.IsUnknown() {
+		var configurations map[string]interface{}
+		if err := json.Unmarshal([]byte(plan.Configurations.ValueString()), &configurations); err != nil {
+			resp.Diagnostics.AddError(
+				"Invalid configurations JSON",
+				"Could not parse configurations: "+err.Error(),
+			)
+			return
+		}
+		updateReq.Configurations = configurations
 	}
 
 	if !plan.Description.IsNull() {

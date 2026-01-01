@@ -52,14 +52,6 @@ func TestAccPromptsDataSource_withCollection(t *testing.T) {
 	})
 }
 
-func testAccPromptsDataSourceConfig() string {
-	return `
-provider "portkey" {}
-
-data "portkey_prompts" "all" {}
-`
-}
-
 func testAccPromptsDataSourceConfigWithCollection(collectionID string) string {
 	return `
 provider "portkey" {}

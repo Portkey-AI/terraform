@@ -180,11 +180,11 @@ func TestGuardrail_IsEnabledNormalization(t *testing.T) {
 	// to not having is_enabled at all
 
 	testCases := []struct {
-		name                string
-		userChecks          string
-		apiChecks           string
-		shouldPreserveUser  bool
-		description         string
+		name               string
+		userChecks         string
+		apiChecks          string
+		shouldPreserveUser bool
+		description        string
 	}{
 		{
 			name:               "is_enabled_true_equals_missing",
@@ -213,8 +213,8 @@ func TestGuardrail_IsEnabledNormalization(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Parse checks
 			var userChecks, apiChecks []map[string]interface{}
-			json.Unmarshal([]byte(tc.userChecks), &userChecks)
-			json.Unmarshal([]byte(tc.apiChecks), &apiChecks)
+			_ = json.Unmarshal([]byte(tc.userChecks), &userChecks)
+			_ = json.Unmarshal([]byte(tc.apiChecks), &apiChecks)
 
 			// Normalize is_enabled: remove if true (the default)
 			normalizeChecks := func(checks []map[string]interface{}) {
@@ -428,8 +428,8 @@ func TestRegression_GuardrailChecksIsEnabled(t *testing.T) {
 
 	// Parse and normalize
 	var userVal, apiVal []map[string]interface{}
-	json.Unmarshal([]byte(userChecks), &userVal)
-	json.Unmarshal([]byte(apiChecks), &apiVal)
+	_ = json.Unmarshal([]byte(userChecks), &userVal)
+	_ = json.Unmarshal([]byte(apiChecks), &apiVal)
 
 	// Normalize: remove is_enabled:true (it's the default)
 	for _, check := range userVal {
