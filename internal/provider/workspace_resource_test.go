@@ -47,9 +47,7 @@ func TestAccWorkspaceResource_basic(t *testing.T) {
 }
 
 // TestAccWorkspaceResource_minimal tests workspace creation without optional fields.
-// Note: Currently skipped due to API returning zero values for updated_at on initial create.
 func TestAccWorkspaceResource_minimal(t *testing.T) {
-	t.Skip("Skipping: API returns zero updated_at for workspaces without description")
 
 	rName := acctest.RandomWithPrefix("tf-acc-minimal")
 

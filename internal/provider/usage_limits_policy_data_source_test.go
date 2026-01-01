@@ -10,7 +10,7 @@ import (
 
 func TestAccUsageLimitsPolicyDataSource_basic(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-ds")
-	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

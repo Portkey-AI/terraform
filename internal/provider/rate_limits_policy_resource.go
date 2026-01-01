@@ -332,8 +332,8 @@ func (r *rateLimitsPolicyResource) ImportState(ctx context.Context, req resource
 func (r *rateLimitsPolicyResource) mapPolicyToState(state *rateLimitsPolicyResourceModel, policy *client.RateLimitsPolicy, preserveRequiresReplace bool) {
 	state.ID = types.StringValue(policy.ID)
 	state.Name = types.StringValue(policy.Name)
-	// Preserve workspace_id from state to avoid triggering RequiresReplace unnecessarily
-	if !preserveRequiresReplace || state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
+	// Always preserve workspace_id from state if set (API returns UUID but user may have provided slug)
+	if state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
 		state.WorkspaceID = types.StringValue(policy.WorkspaceID)
 	}
 	// Preserve type from state to avoid triggering RequiresReplace unnecessarily

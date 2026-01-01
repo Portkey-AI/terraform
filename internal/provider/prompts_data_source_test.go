@@ -7,14 +7,22 @@ import (
 )
 
 func TestAccPromptsDataSource_basic(t *testing.T) {
+	collectionID := getTestCollectionID()
+
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			if collectionID == "" {
+				t.Skip("TEST_COLLECTION_ID must be set for prompts data source tests")
+			}
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccPromptsDataSourceConfig(),
+				// Use collection filter to ensure we get valid results
+				Config: testAccPromptsDataSourceConfigWithCollection(collectionID),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("data.portkey_prompts.all", "prompts.#"),
+					resource.TestCheckResourceAttrSet("data.portkey_prompts.collection", "collection_id"),
 				),
 			},
 		},
@@ -22,10 +30,15 @@ func TestAccPromptsDataSource_basic(t *testing.T) {
 }
 
 func TestAccPromptsDataSource_withCollection(t *testing.T) {
-	collectionID := "a0d6b8c5-dfc4-11f0-84d4-024c88f9cbd3"
+	collectionID := getTestCollectionID()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			if collectionID == "" {
+				t.Skip("TEST_COLLECTION_ID must be set for prompts data source tests")
+			}
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{

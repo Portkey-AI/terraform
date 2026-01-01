@@ -10,7 +10,7 @@ import (
 
 func TestAccUsageLimitsPolicyResource_basic(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-test")
-	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -50,7 +50,7 @@ func TestAccUsageLimitsPolicyResource_basic(t *testing.T) {
 
 func TestAccUsageLimitsPolicyResource_updateName(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-rename")
-	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

@@ -80,7 +80,7 @@ type Workspace struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	UpdatedAt   time.Time `json:"last_updated_at"`
 }
 
 // CreateWorkspaceRequest represents the request to create a workspace
@@ -144,17 +144,18 @@ func (c *Client) ListWorkspaces(ctx context.Context) ([]Workspace, error) {
 
 // UpdateWorkspace updates a workspace
 func (c *Client) UpdateWorkspace(ctx context.Context, id string, req UpdateWorkspaceRequest) (*Workspace, error) {
-	respBody, err := c.doRequest(ctx, http.MethodPut, "/admin/workspaces/"+id, req)
+	_, err := c.doRequest(ctx, http.MethodPut, "/admin/workspaces/"+id, req)
 	if err != nil {
 		return nil, err
 	}
 
-	var workspace Workspace
-	if err := json.Unmarshal(respBody, &workspace); err != nil {
-		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	// Fetch updated workspace details since update returns empty response
+	workspace, err := c.GetWorkspace(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("workspace updated but failed to retrieve details: %w", err)
 	}
 
-	return &workspace, nil
+	return workspace, nil
 }
 
 // DeleteWorkspaceRequest represents the request to delete a workspace
@@ -1169,6 +1170,7 @@ type Guardrail struct {
 // GuardrailCheck represents a check in a guardrail
 type GuardrailCheck struct {
 	ID         string                 `json:"id"`
+	IsEnabled  *bool                  `json:"is_enabled,omitempty"`
 	Parameters map[string]interface{} `json:"parameters,omitempty"`
 }
 

@@ -10,12 +10,19 @@ import (
 
 func TestAccPromptResource_basic(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-test")
-	// Using workspace 9da48f29-e564-4bcd-8480-757803acf5ae for testing
-	collectionID := "a0d6b8c5-dfc4-11f0-84d4-024c88f9cbd3"
-	virtualKey := "4d1848ab-3e0b-42be-b147-f08d9087f6ef"
+	collectionID := getTestCollectionID()
+	virtualKey := getTestVirtualKey()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			if collectionID == "" {
+				t.Skip("TEST_COLLECTION_ID must be set for prompt tests")
+			}
+			if virtualKey == "" {
+				t.Skip("TEST_VIRTUAL_KEY must be set for prompt tests")
+			}
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Create and Read testing
@@ -38,7 +45,11 @@ func TestAccPromptResource_basic(t *testing.T) {
 				ResourceName:      "portkey_prompt.test",
 				ImportState:       true,
 				ImportStateVerify: true,
-				// parameters: API adds "model" field; virtual_key: API returns slug instead of ID
+				// Ignored fields explained:
+				// - parameters: API adds "model" field to user's empty "{}"
+				// - virtual_key: API returns slug, user may have provided UUID
+				// - version_description: computed field not in import
+				// - timestamps: may differ slightly
 				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "version_description", "parameters", "virtual_key"},
 			},
 			// Update name testing
@@ -57,11 +68,19 @@ func TestAccPromptResource_basic(t *testing.T) {
 
 func TestAccPromptResource_updateName(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-rename")
-	collectionID := "a0d6b8c5-dfc4-11f0-84d4-024c88f9cbd3"
-	virtualKey := "4d1848ab-3e0b-42be-b147-f08d9087f6ef"
+	collectionID := getTestCollectionID()
+	virtualKey := getTestVirtualKey()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			if collectionID == "" {
+				t.Skip("TEST_COLLECTION_ID must be set for prompt tests")
+			}
+			if virtualKey == "" {
+				t.Skip("TEST_VIRTUAL_KEY must be set for prompt tests")
+			}
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{

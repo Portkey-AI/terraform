@@ -8,12 +8,15 @@ import (
 )
 
 func TestAccProvidersDataSource_basic(t *testing.T) {
+	workspaceID := getTestWorkspaceID()
+
 	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Read all providers for a workspace
 			{
-				Config: testAccProvidersDataSourceConfig(testWorkspaceID),
+				Config: testAccProvidersDataSourceConfig(workspaceID),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.portkey_providers.test", "providers.#"),
 				),

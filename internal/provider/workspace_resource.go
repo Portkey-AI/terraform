@@ -67,10 +67,16 @@ func (r *workspaceResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			"created_at": schema.StringAttribute{
 				Description: "Timestamp when the workspace was created.",
 				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"updated_at": schema.StringAttribute{
 				Description: "Timestamp when the workspace was last updated.",
 				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -156,7 +162,13 @@ func (r *workspaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	// Overwrite items with refreshed state
 	state.Name = types.StringValue(workspace.Name)
-	state.Description = types.StringValue(workspace.Description)
+	// Only set description if it's not empty - preserve null vs empty distinction
+	if workspace.Description != "" {
+		state.Description = types.StringValue(workspace.Description)
+	} else if state.Description.IsUnknown() {
+		state.Description = types.StringNull()
+	}
+	// Keep state.Description as-is if it was null and API returns empty
 	state.CreatedAt = types.StringValue(workspace.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
 	state.UpdatedAt = types.StringValue(workspace.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"))
 
@@ -184,7 +196,7 @@ func (r *workspaceResource) Update(ctx context.Context, req resource.UpdateReque
 		Description: plan.Description.ValueString(),
 	}
 
-	workspace, err := r.client.UpdateWorkspace(ctx, plan.ID.ValueString(), updateReq)
+	_, err := r.client.UpdateWorkspace(ctx, plan.ID.ValueString(), updateReq)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Updating Portkey Workspace",
@@ -193,9 +205,8 @@ func (r *workspaceResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	// Update resource state with updated items and timestamps
-	plan.CreatedAt = types.StringValue(workspace.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
-	plan.UpdatedAt = types.StringValue(workspace.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"))
+	// Note: Don't update timestamps here - the plan already has the expected values
+	// from UseStateForUnknown. Let Read update them on next refresh.
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)

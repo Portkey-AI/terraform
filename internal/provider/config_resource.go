@@ -191,7 +191,10 @@ func (r *configResource) Create(ctx context.Context, req resource.CreateRequest,
 	// Map response body to schema
 	plan.ID = types.StringValue(config.ID)
 	plan.Slug = types.StringValue(config.Slug)
-	plan.WorkspaceID = types.StringValue(config.WorkspaceID)
+	// Preserve workspace_id from plan if set (API returns UUID but user may have provided slug)
+	if plan.WorkspaceID.IsNull() || plan.WorkspaceID.IsUnknown() {
+		plan.WorkspaceID = types.StringValue(config.WorkspaceID)
+	}
 	plan.IsDefault = types.BoolValue(config.IsDefault == 1)
 	plan.Status = types.StringValue(config.Status)
 	plan.VersionID = types.StringValue(config.VersionID)
@@ -345,7 +348,8 @@ func (r *configResource) Update(ctx context.Context, req resource.UpdateRequest,
 	// Update resource state with updated items and timestamp
 	plan.ID = types.StringValue(config.ID)
 	plan.Slug = types.StringValue(config.Slug)
-	plan.WorkspaceID = types.StringValue(config.WorkspaceID)
+	// Preserve workspace_id from state (API returns UUID but user may have provided slug)
+	// workspace_id has RequiresReplace, so it shouldn't change during update
 	plan.IsDefault = types.BoolValue(config.IsDefault == 1)
 	plan.Status = types.StringValue(config.Status)
 	plan.VersionID = types.StringValue(config.VersionID)

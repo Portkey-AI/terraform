@@ -78,6 +78,9 @@ func (r *workspaceMemberResource) Schema(_ context.Context, _ resource.SchemaReq
 			"created_at": schema.StringAttribute{
 				Description: "Timestamp when the member was added to the workspace.",
 				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -235,16 +238,17 @@ func (r *workspaceMemberResource) Delete(ctx context.Context, req resource.Delet
 
 // ImportState imports the resource state.
 func (r *workspaceMemberResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import ID should be in format: workspace_id/member_id
+	// Import ID should be in format: workspace_id/user_id
 	parts := strings.Split(req.ID, "/")
 	if len(parts) != 2 {
 		resp.Diagnostics.AddError(
 			"Invalid Import ID",
-			"Import ID must be in format: workspace_id/member_id",
+			"Import ID must be in format: workspace_id/user_id",
 		)
 		return
 	}
 
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("workspace_id"), parts[0])...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("user_id"), parts[1])...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), parts[1])...)
 }

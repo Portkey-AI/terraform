@@ -185,8 +185,16 @@ func (r *guardrailResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
+	// Keep user's JSON formatting for checks and actions
+	oldChecks := plan.Checks
+	oldActions := plan.Actions
+
 	// Map response body to schema
 	r.mapGuardrailToState(&plan, guardrail, false)
+
+	// Preserve user's formatting if semantically equal (handles is_enabled normalization)
+	plan.Checks = r.preserveChecksFormatting(oldChecks.ValueString(), plan.Checks.ValueString())
+	plan.Actions = r.preserveJSONFormatting(oldActions.ValueString(), plan.Actions.ValueString())
 
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
@@ -222,8 +230,8 @@ func (r *guardrailResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	r.mapGuardrailToState(&state, guardrail, true)
 
-	// Compare and preserve formatting if semantically equal
-	state.Checks = r.preserveJSONFormatting(oldChecks.ValueString(), state.Checks.ValueString())
+	// Compare and preserve formatting if semantically equal (handles is_enabled normalization)
+	state.Checks = r.preserveChecksFormatting(oldChecks.ValueString(), state.Checks.ValueString())
 	state.Actions = r.preserveJSONFormatting(oldActions.ValueString(), state.Actions.ValueString())
 
 	// Set refreshed state
@@ -293,8 +301,16 @@ func (r *guardrailResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
+	// Keep user's JSON formatting for checks and actions
+	oldChecks := plan.Checks
+	oldActions := plan.Actions
+
 	// Map response to plan
 	r.mapGuardrailToState(&plan, guardrail, false)
+
+	// Preserve user's formatting if semantically equal (handles is_enabled normalization)
+	plan.Checks = r.preserveChecksFormatting(oldChecks.ValueString(), plan.Checks.ValueString())
+	plan.Actions = r.preserveJSONFormatting(oldActions.ValueString(), plan.Actions.ValueString())
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -336,8 +352,8 @@ func (r *guardrailResource) mapGuardrailToState(state *guardrailResourceModel, g
 	state.ID = types.StringValue(guardrail.ID)
 	state.Slug = types.StringValue(guardrail.Slug)
 	state.Name = types.StringValue(guardrail.Name)
-	// Preserve workspace_id from state to avoid triggering RequiresReplace unnecessarily
-	if !preserveRequiresReplace || state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
+	// Always preserve workspace_id from state if set (API returns UUID but user may have provided slug)
+	if state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
 		state.WorkspaceID = types.StringValue(guardrail.WorkspaceID)
 	}
 	state.Status = types.StringValue(guardrail.Status)
@@ -381,6 +397,46 @@ func (r *guardrailResource) preserveJSONFormatting(oldJSON, newJSON string) type
 		if string(oldBytes) == string(newBytes) {
 			return types.StringValue(oldJSON)
 		}
+	}
+
+	return types.StringValue(newJSON)
+}
+
+// preserveChecksFormatting handles is_enabled normalization for guardrail checks
+// The API may omit is_enabled when it's true (the default), but the user may have explicitly set it
+func (r *guardrailResource) preserveChecksFormatting(oldJSON, newJSON string) types.String {
+	if oldJSON == "" {
+		return types.StringValue(newJSON)
+	}
+
+	var oldChecks, newChecks []map[string]interface{}
+	oldErr := json.Unmarshal([]byte(oldJSON), &oldChecks)
+	newErr := json.Unmarshal([]byte(newJSON), &newChecks)
+
+	if oldErr != nil || newErr != nil {
+		return types.StringValue(newJSON)
+	}
+
+	// Normalize is_enabled: remove if true (which is the default)
+	normalizeChecks := func(checks []map[string]interface{}) {
+		for _, check := range checks {
+			if isEnabled, ok := check["is_enabled"]; ok {
+				// Remove is_enabled if it's true (the default value)
+				if enabled, isBool := isEnabled.(bool); isBool && enabled {
+					delete(check, "is_enabled")
+				}
+			}
+		}
+	}
+
+	normalizeChecks(oldChecks)
+	normalizeChecks(newChecks)
+
+	oldBytes, _ := json.Marshal(oldChecks)
+	newBytes, _ := json.Marshal(newChecks)
+
+	if string(oldBytes) == string(newBytes) {
+		return types.StringValue(oldJSON)
 	}
 
 	return types.StringValue(newJSON)

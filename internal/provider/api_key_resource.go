@@ -250,9 +250,11 @@ func (r *apiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 		plan.UpdatedAt = types.StringValue(apiKey.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
 	}
 
-	// Handle workspace_id from API
-	if apiKey.WorkspaceID != "" {
-		plan.WorkspaceID = types.StringValue(apiKey.WorkspaceID)
+	// Preserve workspace_id from plan if set (API returns UUID but user may have provided slug)
+	if plan.WorkspaceID.IsNull() || plan.WorkspaceID.IsUnknown() {
+		if apiKey.WorkspaceID != "" {
+			plan.WorkspaceID = types.StringValue(apiKey.WorkspaceID)
+		}
 	}
 
 	// Handle user_id from API

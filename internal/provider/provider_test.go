@@ -3,13 +3,44 @@ package provider
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/joho/godotenv"
 )
+
+func init() {
+	// Load .env file from project root for local development
+	// This allows running acceptance tests without manually setting env vars
+	loadEnvFile()
+}
+
+// loadEnvFile attempts to load environment variables from .env file
+func loadEnvFile() {
+	// Try to find .env file in current directory or parent directories
+	dir, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	for {
+		envPath := filepath.Join(dir, ".env")
+		if _, err := os.Stat(envPath); err == nil {
+			_ = godotenv.Load(envPath)
+			return
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+}
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
 // acceptance testing. The factory function will be invoked for every Terraform
@@ -22,8 +53,51 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 // testAccPreCheck validates the necessary test environment variables exist.
 func testAccPreCheck(t *testing.T) {
 	if v := os.Getenv("PORTKEY_API_KEY"); v == "" {
-		t.Fatal("PORTKEY_API_KEY must be set for acceptance tests")
+		t.Skip("PORTKEY_API_KEY must be set for acceptance tests. Create a .env file with PORTKEY_API_KEY=your-key")
 	}
+}
+
+// getTestWorkspaceID returns a workspace ID for testing
+// It first checks for TEST_WORKSPACE_ID env var, then falls back to a default
+func getTestWorkspaceID() string {
+	if v := os.Getenv("TEST_WORKSPACE_ID"); v != "" {
+		return v
+	}
+	// Default test workspace - override in .env for your environment
+	return "9da48f29-e564-4bcd-8480-757803acf5ae"
+}
+
+// getTestWorkspaceSlug returns a workspace slug for testing slug-to-UUID scenarios
+func getTestWorkspaceSlug() string {
+	if v := os.Getenv("TEST_WORKSPACE_SLUG"); v != "" {
+		return v
+	}
+	// Default - override in .env for your environment
+	return ""
+}
+
+// getTestIntegrationID returns an integration ID for testing
+func getTestIntegrationID() string {
+	if v := os.Getenv("TEST_INTEGRATION_ID"); v != "" {
+		return v
+	}
+	return ""
+}
+
+// getTestCollectionID returns a collection ID for prompt testing
+func getTestCollectionID() string {
+	if v := os.Getenv("TEST_COLLECTION_ID"); v != "" {
+		return v
+	}
+	return ""
+}
+
+// getTestVirtualKey returns a virtual key (provider) ID for prompt testing
+func getTestVirtualKey() string {
+	if v := os.Getenv("TEST_VIRTUAL_KEY"); v != "" {
+		return v
+	}
+	return ""
 }
 
 // providerConfig is a shared configuration for all acceptance tests.

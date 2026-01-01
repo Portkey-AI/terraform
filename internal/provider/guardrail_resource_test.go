@@ -10,7 +10,7 @@ import (
 
 func TestAccGuardrailResource_basic(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-test")
-	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -50,7 +50,7 @@ func TestAccGuardrailResource_basic(t *testing.T) {
 
 func TestAccGuardrailResource_updateName(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-rename")
-	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -66,6 +66,95 @@ func TestAccGuardrailResource_updateName(t *testing.T) {
 				Config: testAccGuardrailResourceConfigUpdated(rName+"-updated", workspaceID),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName+"-updated"),
+				),
+			},
+		},
+	})
+}
+
+// TestAccGuardrailResource_withIsEnabled tests that is_enabled:true in checks
+// is preserved and doesn't cause inconsistency (regression test for the bug)
+func TestAccGuardrailResource_withIsEnabled(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-enabled")
+	workspaceID := getTestWorkspaceID()
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create with is_enabled: true
+			{
+				Config: testAccGuardrailResourceConfigWithIsEnabled(rName, workspaceID, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
+					resource.TestCheckResourceAttrSet("portkey_guardrail.test", "checks"),
+				),
+			},
+			// Apply again - should be idempotent (no changes)
+			{
+				Config: testAccGuardrailResourceConfigWithIsEnabled(rName, workspaceID, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
+				),
+			},
+		},
+	})
+}
+
+// TestAccGuardrailResource_workspaceSlug tests that workspace_id is preserved
+// when user provides a slug but API returns UUID
+func TestAccGuardrailResource_workspaceSlug(t *testing.T) {
+	workspaceSlug := getTestWorkspaceSlug()
+	if workspaceSlug == "" {
+		t.Skip("TEST_WORKSPACE_SLUG must be set to test slug preservation")
+	}
+
+	rName := acctest.RandomWithPrefix("tf-acc-slug")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccGuardrailResourceConfig(rName, workspaceSlug),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
+					// Verify workspace_id is preserved as the slug
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "workspace_id", workspaceSlug),
+				),
+			},
+			// Apply again - should preserve the slug
+			{
+				Config: testAccGuardrailResourceConfig(rName, workspaceSlug),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "workspace_id", workspaceSlug),
+				),
+			},
+		},
+	})
+}
+
+// TestAccGuardrailResource_multipleChecks tests guardrails with multiple checks
+func TestAccGuardrailResource_multipleChecks(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-multi")
+	workspaceID := getTestWorkspaceID()
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccGuardrailResourceConfigMultipleChecks(rName, workspaceID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
+					resource.TestCheckResourceAttrSet("portkey_guardrail.test", "checks"),
+				),
+			},
+			// Apply again - should be idempotent
+			{
+				Config: testAccGuardrailResourceConfigMultipleChecks(rName, workspaceID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
 				),
 			},
 		},
@@ -115,6 +204,64 @@ resource "portkey_guardrail" "test" {
   actions = jsonencode({
     onFail  = "block"
     message = "Word count check failed - updated"
+  })
+}
+`, name, workspaceID)
+}
+
+func testAccGuardrailResourceConfigWithIsEnabled(name, workspaceID string, isEnabled bool) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_guardrail" "test" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  checks       = jsonencode([
+    {
+      id         = "default.wordCount"
+      is_enabled = %[3]t
+      parameters = {
+        minWords = 1
+        maxWords = 1000
+      }
+    }
+  ])
+  actions = jsonencode({
+    onFail  = "log"
+    message = "Word count check failed"
+  })
+}
+`, name, workspaceID, isEnabled)
+}
+
+func testAccGuardrailResourceConfigMultipleChecks(name, workspaceID string) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_guardrail" "test" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  checks       = jsonencode([
+    {
+      id         = "default.wordCount"
+      is_enabled = true
+      parameters = {
+        minWords = 1
+        maxWords = 1000
+      }
+    },
+    {
+      id         = "default.sentenceCount"
+      is_enabled = true
+      parameters = {
+        minSentences = 1
+        maxSentences = 50
+      }
+    }
+  ])
+  actions = jsonencode({
+    onFail  = "log"
+    message = "Guardrail check failed"
   })
 }
 `, name, workspaceID)

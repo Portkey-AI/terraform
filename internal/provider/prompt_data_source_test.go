@@ -10,11 +10,19 @@ import (
 
 func TestAccPromptDataSource_basic(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-ds")
-	collectionID := "a0d6b8c5-dfc4-11f0-84d4-024c88f9cbd3"
-	virtualKey := "4d1848ab-3e0b-42be-b147-f08d9087f6ef"
+	collectionID := getTestCollectionID()
+	virtualKey := getTestVirtualKey()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
+		PreCheck: func() {
+			testAccPreCheck(t)
+			if collectionID == "" {
+				t.Skip("TEST_COLLECTION_ID must be set for prompt tests")
+			}
+			if virtualKey == "" {
+				t.Skip("TEST_VIRTUAL_KEY must be set for prompt tests")
+			}
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{

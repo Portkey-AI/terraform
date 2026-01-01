@@ -11,9 +11,8 @@ import (
 
 // TestAccWorkspaceMemberResource_basic tests the basic workspace member lifecycle.
 // Uses the first user from the organization's user list.
-// Note: This test may be affected by API behavior where org admins have elevated workspace roles.
+// Note: Org owners always get "admin" role in workspaces regardless of the requested role.
 func TestAccWorkspaceMemberResource_basic(t *testing.T) {
-	t.Skip("Skipping: API getMember endpoint has inconsistent role handling for org admins")
 
 	rName := acctest.RandomWithPrefix("tf-acc-wsmember")
 
@@ -22,13 +21,14 @@ func TestAccWorkspaceMemberResource_basic(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Create workspace and add member using first user from org
+			// Using "admin" role since org owners automatically get admin access
 			{
-				Config: testAccWorkspaceMemberResourceConfigDynamic(rName, "member"),
+				Config: testAccWorkspaceMemberResourceConfigDynamic(rName, "admin"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("portkey_workspace_member.test", "id"),
 					resource.TestCheckResourceAttrSet("portkey_workspace_member.test", "workspace_id"),
 					resource.TestCheckResourceAttrSet("portkey_workspace_member.test", "user_id"),
-					resource.TestCheckResourceAttrSet("portkey_workspace_member.test", "role"),
+					resource.TestCheckResourceAttr("portkey_workspace_member.test", "role", "admin"),
 					resource.TestCheckResourceAttrSet("portkey_workspace_member.test", "created_at"),
 				),
 			},
@@ -37,7 +37,7 @@ func TestAccWorkspaceMemberResource_basic(t *testing.T) {
 				ResourceName:            "portkey_workspace_member.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "role"},
+				ImportStateVerifyIgnore: []string{"created_at"},
 				ImportStateIdFunc:       workspaceMemberImportStateIdFunc("portkey_workspace_member.test"),
 			},
 		},
@@ -45,9 +45,10 @@ func TestAccWorkspaceMemberResource_basic(t *testing.T) {
 }
 
 // TestAccWorkspaceMemberResource_roleUpdate tests changing member roles.
-// Note: This test may be affected by API behavior where org admins have elevated workspace roles.
+// Note: This test is skipped because org owners always have "admin" role in workspaces.
+// To properly test role updates, you need a non-owner user in the organization.
 func TestAccWorkspaceMemberResource_roleUpdate(t *testing.T) {
-	t.Skip("Skipping: API getMember endpoint has inconsistent role handling for org admins")
+	t.Skip("Skipping: org owners always have admin role in workspaces; need non-owner user to test role changes")
 
 	rName := acctest.RandomWithPrefix("tf-acc-role")
 
@@ -58,13 +59,13 @@ func TestAccWorkspaceMemberResource_roleUpdate(t *testing.T) {
 			{
 				Config: testAccWorkspaceMemberResourceConfigDynamic(rName, "member"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("portkey_workspace_member.test", "role"),
+					resource.TestCheckResourceAttr("portkey_workspace_member.test", "role", "member"),
 				),
 			},
 			{
 				Config: testAccWorkspaceMemberResourceConfigDynamic(rName, "admin"),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("portkey_workspace_member.test", "role"),
+					resource.TestCheckResourceAttr("portkey_workspace_member.test", "role", "admin"),
 				),
 			},
 		},
@@ -80,8 +81,8 @@ func workspaceMemberImportStateIdFunc(resourceName string) resource.ImportStateI
 		}
 
 		workspaceID := rs.Primary.Attributes["workspace_id"]
-		memberID := rs.Primary.ID
-		return fmt.Sprintf("%s/%s", workspaceID, memberID), nil
+		userID := rs.Primary.Attributes["user_id"]
+		return fmt.Sprintf("%s/%s", workspaceID, userID), nil
 	}
 }
 

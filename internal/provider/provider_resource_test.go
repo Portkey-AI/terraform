@@ -8,28 +8,32 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
-// Test workspace ID and integration that is enabled for it
-// These are from the test environment
-const testWorkspaceID = "9da48f29-e564-4bcd-8480-757803acf5ae"
-const testIntegrationSlug = "foundry-entra"
-
 func TestAccProviderResource_basic(t *testing.T) {
+	workspaceID := getTestWorkspaceID()
+	integrationID := getTestIntegrationID()
+
 	rnd := rand.Int63()
 	name := fmt.Sprintf("tf-acc-test-provider-%d", rnd)
 	nameUpdated := fmt.Sprintf("tf-acc-test-provider-%d-updated", rnd)
 
 	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			if integrationID == "" {
+				t.Skip("TEST_INTEGRATION_ID must be set for provider tests")
+			}
+		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Create and Read testing
 			{
-				Config: testAccProviderResourceConfig(name, testWorkspaceID, testIntegrationSlug),
+				Config: testAccProviderResourceConfig(name, workspaceID, integrationID),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("portkey_provider.test", "id"),
 					resource.TestCheckResourceAttrSet("portkey_provider.test", "slug"),
 					resource.TestCheckResourceAttr("portkey_provider.test", "name", name),
-					resource.TestCheckResourceAttr("portkey_provider.test", "workspace_id", testWorkspaceID),
-					resource.TestCheckResourceAttr("portkey_provider.test", "integration_id", testIntegrationSlug),
+					resource.TestCheckResourceAttr("portkey_provider.test", "workspace_id", workspaceID),
+					resource.TestCheckResourceAttr("portkey_provider.test", "integration_id", integrationID),
 					resource.TestCheckResourceAttr("portkey_provider.test", "status", "active"),
 				),
 			},
@@ -37,12 +41,12 @@ func TestAccProviderResource_basic(t *testing.T) {
 			{
 				ResourceName:      "portkey_provider.test",
 				ImportState:       true,
-				ImportStateId:     fmt.Sprintf("%s:", testWorkspaceID), // Will be completed dynamically
-				ImportStateVerify: false,                               // Skip verify due to import format
+				ImportStateId:     fmt.Sprintf("%s:", workspaceID), // Will be completed dynamically
+				ImportStateVerify: false,                           // Skip verify due to import format
 			},
 			// Update and Read testing
 			{
-				Config: testAccProviderResourceConfigWithNote(nameUpdated, testWorkspaceID, testIntegrationSlug, "Updated note"),
+				Config: testAccProviderResourceConfigWithNote(nameUpdated, workspaceID, integrationID, "Updated note"),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("portkey_provider.test", "name", nameUpdated),
 				),

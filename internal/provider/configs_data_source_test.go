@@ -1,8 +1,10 @@
 package provider
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
@@ -22,16 +24,20 @@ func TestAccConfigsDataSource_basic(t *testing.T) {
 }
 
 func TestAccConfigsDataSource_withWorkspace(t *testing.T) {
-	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+	rName := acctest.RandomWithPrefix("tf-acc-ds-list")
+	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccConfigsDataSourceConfigWithWorkspace(workspaceID),
+				// Create a config first, then list - ensures list has at least 1 item
+				Config: testAccConfigsDataSourceConfigWithWorkspaceAndConfig(rName, workspaceID),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("data.portkey_configs.workspace", "configs.#"),
+					resource.TestCheckResourceAttr("data.portkey_configs.workspace", "workspace_id", workspaceID),
+					// Verify at least 1 config exists
+					resource.TestCheckResourceAttr("data.portkey_configs.workspace", "configs.#", "1"),
 				),
 			},
 		},
@@ -46,12 +52,21 @@ data "portkey_configs" "all" {}
 `
 }
 
-func testAccConfigsDataSourceConfigWithWorkspace(workspaceID string) string {
-	return `
+func testAccConfigsDataSourceConfigWithWorkspaceAndConfig(name, workspaceID string) string {
+	return fmt.Sprintf(`
 provider "portkey" {}
 
-data "portkey_configs" "workspace" {
-  workspace_id = "` + workspaceID + `"
+resource "portkey_config" "test" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  config       = jsonencode({
+    retry = { attempts = 3 }
+  })
 }
-`
+
+data "portkey_configs" "workspace" {
+  workspace_id = %[2]q
+  depends_on   = [portkey_config.test]
+}
+`, name, workspaceID)
 }

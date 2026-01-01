@@ -31,7 +31,11 @@ func TestAccUserInviteResource_basic(t *testing.T) {
 				ResourceName:            "portkey_user_invite.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"scopes", "status", "created_at", "expires_at"}, // computed fields may differ
+				// Ignored fields explained:
+				// - scopes: API doesn't return scopes on GET invite
+				// - status: computed by API, not from config
+				// - timestamps: not part of import state
+				ImportStateVerifyIgnore: []string{"scopes", "status", "created_at", "expires_at"},
 			},
 			// Delete testing automatically occurs in TestCase
 		},

@@ -7,7 +7,7 @@ import (
 )
 
 func TestAccUsageLimitsPoliciesDataSource_basic(t *testing.T) {
-	workspaceID := "9da48f29-e564-4bcd-8480-757803acf5ae"
+	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
