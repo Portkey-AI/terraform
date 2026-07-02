@@ -25,3 +25,7 @@ resource "portkey_workspace" "with_limits" {
 
 # To clear limits, simply remove the usage_limits or rate_limits blocks
 # from your config and re-apply.
+
+# Default input/output guardrails for a workspace are configured via the
+# separate portkey_workspace_defaults resource. See
+# examples/resources/portkey_workspace_defaults/resource.tf.
