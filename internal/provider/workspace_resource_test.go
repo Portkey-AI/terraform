@@ -681,4 +681,3 @@ resource "portkey_workspace" "test" {
 }
 `, name, icon)
 }
-
