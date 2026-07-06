@@ -305,12 +305,12 @@ type CreateWorkspaceRequest struct {
 // We cannot use *string with omitempty because Go's json encoder treats
 // a pointer to "" as empty, omitting the field — which prevents clearing.
 type UpdateWorkspaceRequest struct {
-	Name             string                           `json:"name,omitempty"`
-	Icon             json.RawMessage                  `json:"icon,omitempty"`
-	Description      string                           `json:"description,omitempty"`
-	Defaults         *UpdateWorkspaceDefaults         `json:"defaults,omitempty"`
-	RateLimits       json.RawMessage                  `json:"rate_limits,omitempty"`
-	UsageLimits      json.RawMessage                  `json:"usage_limits,omitempty"`
+	Name             string                     `json:"name,omitempty"`
+	Icon             json.RawMessage            `json:"icon,omitempty"`
+	Description      string                     `json:"description,omitempty"`
+	Defaults         *UpdateWorkspaceDefaults   `json:"defaults,omitempty"`
+	RateLimits       json.RawMessage            `json:"rate_limits,omitempty"`
+	UsageLimits      json.RawMessage            `json:"usage_limits,omitempty"`
 	SecuritySettings *WorkspaceSecuritySettings `json:"security_settings,omitempty"`
 }
 
