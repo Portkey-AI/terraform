@@ -142,6 +142,7 @@ func TestProvider_HasChildResources(t *testing.T) {
 		"portkey_workspace",
 		"portkey_workspace_defaults",
 		"portkey_workspace_member",
+		"portkey_workspace_security_settings",
 		"portkey_user_invite",
 		"portkey_integration",
 		"portkey_integration_workspace_access",

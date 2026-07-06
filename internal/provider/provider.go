@@ -247,6 +247,7 @@ func (p *portkeyProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewWorkspaceResource,
 		NewWorkspaceDefaultsResource,
 		NewWorkspaceMemberResource,
+		NewWorkspaceSecuritySettingsResource,
 		NewUserInviteResource,
 		NewIntegrationResource,
 		NewIntegrationWorkspaceAccessResource,
