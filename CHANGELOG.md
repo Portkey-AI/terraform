@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Workspace Cascade-Delete on Destroy** - `portkey_workspace` now sets `force_delete=true` when deleting, so `terraform destroy` cascades through dependent resources (providers/virtual-keys, configs, workspace API keys) automatically. Previously, workspaces with any dependents would fail with `409 AB07` and operators had to manually delete each dependent via the API before retrying.
+
+### Fixed
+- **SCIM Workspace Mappings Pagination** - Fixed `ListScimWorkspaceMappings` to paginate through all results instead of returning only the first page (100 items). Organizations with more than 100 SCIM workspace mappings would see `terraform import` fail with "Cannot import non-existent remote object" for mappings beyond the first page, and the `portkey_scim_workspace_mappings` data source would return incomplete results.
+- **Workspace Deleted Out-of-Band State Reconciliation** - `portkey_workspace` Read now treats 403/404 responses as missing-resource (instead of a hard error), allowing Terraform to reconcile state when a workspace is deleted outside Terraform (e.g., via the Portkey UI). Previously, deleting a workspace out-of-band caused every subsequent `terraform plan` to fail.
+
+## [0.2.28] - 2026-06-24
+
+### Changed
+- **Enhanced `portkey_integration` documentation** - Expanded the `configurations` field documentation and resource guide to include comprehensive examples for Azure OpenAI (Entra Federated, Workload Identity), Azure AI Foundry (Default, Entra, Entra Federated, Managed Identity, Workload Identity), and Google Vertex AI (Workload Identity) authentication modes. Added 8 new acceptance tests to validate these configuration patterns.
+
 ## [0.2.27] - 2026-06-10
 
 ### Added
@@ -315,7 +327,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace deletion may be blocked by existing resources
 - Prompt template updates create new versions (use makeDefault to promote)
 
-[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.25...HEAD
+[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.28...HEAD
+[0.2.28]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.27...v0.2.28
+[0.2.27]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.26...v0.2.27
+[0.2.26]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.25...v0.2.26
 [0.2.25]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.24...v0.2.25
 [0.2.17]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.16...v0.2.17
 [0.2.16]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.15...v0.2.16

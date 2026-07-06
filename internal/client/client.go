@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -117,6 +118,37 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 	}, nil
 }
 
+// APIError represents a non-2xx response from the Portkey Admin API. Callers
+// can use errors.As to inspect the StatusCode and apply per-status handling
+// (e.g. treating 403/404 on a Read as missing-resource for state
+// reconciliation).
+//
+// Body is the raw response body so callers can extract Portkey's structured
+// errorCode (AB01, AB03, AB07, AB08, etc.) when they need finer-grained
+// behaviour.
+type APIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("API request failed with status %d: %s", e.StatusCode, e.Body)
+}
+
+// IsNotFound reports whether the error indicates a missing resource as
+// signalled by the Portkey API. Portkey returns 404 for some endpoints and
+// 403 (errorCode AB03) for others when a referenced resource has been
+// deleted out-of-band — both should be treated as missing-resource by
+// resource Read implementations so Terraform can reconcile state.
+func IsNotFound(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode == http.StatusNotFound ||
+		apiErr.StatusCode == http.StatusForbidden
+}
+
 // doRequest performs an HTTP request
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) ([]byte, error) {
 	var reqBody io.Reader
@@ -154,7 +186,10 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Body:       string(respBody),
+		}
 	}
 
 	return respBody, nil
@@ -321,16 +356,32 @@ func (c *Client) UpdateWorkspace(ctx context.Context, id string, req UpdateWorks
 	return workspace, nil
 }
 
-// DeleteWorkspaceRequest represents the request to delete a workspace
+// DeleteWorkspaceRequest represents the request to delete a workspace.
+//
+// ForceDelete instructs the Portkey Admin API to cascade-delete the
+// workspace's dependent resources (providers/virtual-keys, configs,
+// workspace API keys) before deleting the workspace itself. Without
+// it, the API returns 409 AB07 ("Unable to delete. Please ensure that
+// all Virtual Keys are deleted") if any dependent exists, forcing
+// callers to enumerate and DELETE every dependent manually before
+// they can apply a workspace destroy.
 type DeleteWorkspaceRequest struct {
 	Name        string `json:"name"`
 	ForceDelete bool   `json:"force_delete,omitempty"`
 }
 
-// DeleteWorkspace deletes a workspace
+// DeleteWorkspace deletes a workspace and cascades through its dependents.
+//
+// Sets force_delete=true so providers/virtual-keys, configs, and
+// workspace API keys are removed atomically with the workspace. Without
+// this, terraform destroy on a workspace with any dependent fails
+// partway through with 409 AB07, leaving the operator to manually
+// clean up every dependent before retrying -- defeating the purpose of
+// declarative state management.
 func (c *Client) DeleteWorkspace(ctx context.Context, id string, name string) error {
 	req := DeleteWorkspaceRequest{
-		Name: name,
+		Name:        name,
+		ForceDelete: true,
 	}
 	_, err := c.doRequest(ctx, http.MethodDelete, "/admin/workspaces/"+id, req)
 	return err
@@ -2819,46 +2870,77 @@ type ListScimWorkspaceMappingsOptions struct {
 	Role        string
 }
 
+// scimWorkspaceMappingsPageSize is the page size used when listing SCIM
+// workspace mappings. The endpoint caps each response at a server-side
+// default (100) and exposes the rest via the zero-indexed `page` parameter;
+// requesting an explicit page_size keeps the paging math predictable.
+const scimWorkspaceMappingsPageSize = 100
+
 // ListScimWorkspaceMappings retrieves SCIM workspace mappings, optionally
-// filtered by workspace, group, or role. The endpoint has no documented
-// pagination — total_count is returned alongside data.
+// filtered by workspace, group, or role.
+//
+// The endpoint IS paginated: it returns at most `page_size` items (default
+// 100) per response, with the remainder reachable via the zero-indexed
+// `page` query parameter and the running `total_count`. This method walks
+// every page and returns the full set. Fetching only the first page silently
+// drops mappings past position 100 — which made Read/import report otherwise
+// healthy mappings as "non-existent" once an org crossed 100 mappings.
 func (c *Client) ListScimWorkspaceMappings(ctx context.Context, opts ListScimWorkspaceMappingsOptions) ([]ScimWorkspaceMapping, error) {
-	var params []string
+	var filters []string
 	if opts.WorkspaceID != "" {
-		params = append(params, "workspace_id="+url.QueryEscape(opts.WorkspaceID))
+		filters = append(filters, "workspace_id="+url.QueryEscape(opts.WorkspaceID))
 	}
 	if opts.ScimGroupID != "" {
-		params = append(params, "scim_group_id="+url.QueryEscape(opts.ScimGroupID))
+		filters = append(filters, "scim_group_id="+url.QueryEscape(opts.ScimGroupID))
 	}
 	if opts.Role != "" {
-		params = append(params, "role="+url.QueryEscape(opts.Role))
-	}
-	query := ""
-	if len(params) > 0 {
-		query = "?" + strings.Join(params, "&")
+		filters = append(filters, "role="+url.QueryEscape(opts.Role))
 	}
 
-	respBody, err := c.doRequest(ctx, http.MethodGet, c.scimWorkspacesURL(query), nil)
-	if err != nil {
-		return nil, err
+	var all []ScimWorkspaceMapping
+	for page := 0; ; page++ {
+		params := append([]string(nil), filters...)
+		params = append(params,
+			fmt.Sprintf("page_size=%d", scimWorkspaceMappingsPageSize),
+			fmt.Sprintf("page=%d", page),
+		)
+		query := "?" + strings.Join(params, "&")
+
+		respBody, err := c.doRequest(ctx, http.MethodGet, c.scimWorkspacesURL(query), nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// The list endpoint returns items under the "mappings" key (not "data",
+		// which is the convention for other Admin API list endpoints). Accept
+		// both defensively in case Portkey ever normalizes the response shape.
+		var response struct {
+			Mappings   []ScimWorkspaceMapping `json:"mappings"`
+			Data       []ScimWorkspaceMapping `json:"data"`
+			TotalCount int                    `json:"total_count"`
+		}
+		if err := json.Unmarshal(respBody, &response); err != nil {
+			return nil, fmt.Errorf("error unmarshaling response: %w", err)
+		}
+
+		batch := response.Mappings
+		if len(batch) == 0 {
+			batch = response.Data
+		}
+		all = append(all, batch...)
+
+		// Stop once the last page is consumed: a short/empty page means there
+		// is no more data, and a known total_count lets us stop without an
+		// extra empty round-trip when the final page is exactly full.
+		if len(batch) < scimWorkspaceMappingsPageSize {
+			break
+		}
+		if response.TotalCount > 0 && len(all) >= response.TotalCount {
+			break
+		}
 	}
 
-	// The list endpoint returns items under the "mappings" key (not "data",
-	// which is the convention for other Admin API list endpoints). Accept
-	// both defensively in case Portkey ever normalizes the response shape.
-	var response struct {
-		Mappings   []ScimWorkspaceMapping `json:"mappings"`
-		Data       []ScimWorkspaceMapping `json:"data"`
-		TotalCount int                    `json:"total_count"`
-	}
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return nil, fmt.Errorf("error unmarshaling response: %w", err)
-	}
-
-	if len(response.Mappings) > 0 {
-		return response.Mappings, nil
-	}
-	return response.Data, nil
+	return all, nil
 }
 
 // DeleteScimWorkspaceMapping archives a SCIM workspace mapping by mapping ID.
