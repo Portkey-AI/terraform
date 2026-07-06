@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`portkey_workspace_security_settings` resource** — manage the per-workspace role-permission flags (`security_settings`) exposed by `PUT /admin/workspaces/{id}`. Every flag is `Optional+Computed`: omit a flag to keep its current API value. Because the Portkey API requires the full object on every PUT, the provider reads the current settings and overlays user-specified values before writing, so partial configs never clobber untouched flags. Supports import by `workspace_id`. Note: a workspace can only override a section (e.g. `logs`, `data_visibility`) when the organization has enabled workspace-level override for that section; otherwise the API returns `AB01 "Workspace override is not enabled"`. Destroying the resource removes it from Terraform state only and leaves the underlying API values untouched.
+
 ### Changed
 - **Workspace Cascade-Delete on Destroy** - `portkey_workspace` now sets `force_delete=true` when deleting, so `terraform destroy` cascades through dependent resources (providers/virtual-keys, configs, workspace API keys) automatically. Previously, workspaces with any dependents would fail with `409 AB07` and operators had to manually delete each dependent via the API before retrying.
 
