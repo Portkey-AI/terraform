@@ -44,7 +44,12 @@ resource "portkey_workspace_defaults" "prod" {
 
 ~> **Note:** Reference guardrails by `slug` for stable plans. The Admin API accepts either guardrail IDs or slugs on write but returns slugs on read (under admin-API-key auth), so state will always contain slugs. Storing `portkey_guardrail.foo.slug` keeps state and HCL in sync; using `portkey_guardrail.foo.id` (a UUID) produces a permanent plan diff.
 
-~> **Note:** Setting either list to `[]` clears all attached guardrails of that kind. Removing the attribute from the config has the same effect. Destroying the resource clears both lists via the workspace update endpoint; there is no separate delete endpoint for workspace defaults.
+~> **Note:** Setting either list to `[]` **always** clears all attached guardrails of that kind. Omitting the attribute, however, behaves differently on create versus update (see below).
+
+- **On create** (including the first `apply` when adopting this resource against a workspace that already has guardrails — for example, ones attached through the Portkey UI), an omitted attribute is **not** sent to the API, so any existing guardrails of that kind are **preserved**, not cleared. To clear on create, set the attribute explicitly to `[]`.
+- **On update**, removing an attribute you previously managed **clears** that kind (it is treated as an explicit removal). If the attribute was never set, omitting it stays a no-op.
+
+Destroying the resource clears both lists via the workspace update endpoint; there is no separate delete endpoint for workspace defaults.
 
 ## Schema
 

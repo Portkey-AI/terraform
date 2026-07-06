@@ -6,20 +6,21 @@
 
 | Category | Resources | Data Sources | Test Status |
 |----------|:---------:|:------------:|-------------|
-| Organization | 4 | 4 | ⚠️ Workspace delete blocked |
+| Organization | 5 | 4 | ⚠️ Workspace delete blocked |
 | AI Gateway | 6 | 12 | ✅ All passing |
 | Governance | 3 | 6 | ✅ All passing |
 | Access Control | 1 | 2 | ✅ All passing |
 | MCP Gateway | 3 | 2 | ✅ All passing (11 tests) |
 | Secret Management | 1 | 2 | ✅ Plan-time validation covered |
 | Identity / SCIM | 1 | 1 | ✅ Unit + acceptance |
-| **Total** | **18** | **29** | **All passing** |
+| **Total** | **19** | **29** | **All passing** |
 
 ## Provider Resources
 
 | Resource | Create | Read | Update | Delete | Import | API Status | Test Status |
 |----------|:------:|:----:|:------:|:------:|:------:|------------|-------------|
 | `portkey_workspace` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Delete requires name in body | ⚠️ 10 tests, delete blocked by backend |
+| `portkey_workspace_defaults` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Default input/output guardrails live on the workspace; written via PUT `/admin/workspaces/{id}` `defaults`. Create omits unset fields (preserves existing guardrails); Update treats a removed field as a clear. No reset endpoint — Delete clears both lists | ✅ Unit + acc tests |
 | `portkey_workspace_member` | ✅ | ⚠️ | ✅ | ✅ | ✅ | getMember API has issues | Skipped |
 | `portkey_workspace_security_settings` | ✅ | ✅ | ✅ | ⚠️ | ✅ | API requires full 35-field object on PUT (sparse rejected as 400 AB01); Delete removes state only, no API reset endpoint exists | ✅ 2 acc tests (basic + partial-preserves-others) |
 | `portkey_user_invite` | ✅ | ✅ | ❌ | ✅ | ✅ | Update API doesn't exist | ✅ Passing |
@@ -101,11 +102,16 @@ None - all primary resources are now implemented!
 ```
 POST   /admin/workspaces           → Create
 GET    /admin/workspaces           → List
-GET    /admin/workspaces/{id}      → Read (also surfaces `security_settings` bag)
+GET    /admin/workspaces/{id}      → Read (also surfaces `security_settings` bag
+                                            and `defaults.input_guardrails` /
+                                            `defaults.output_guardrails`)
 PUT    /admin/workspaces/{id}      → Update (also accepts `security_settings`;
                                             partial PUT of that field returns
                                             400 AB01, full 35-field object
-                                            required)
+                                            required. Also accepts
+                                            `defaults.input_guardrails` /
+                                            `defaults.output_guardrails` — the
+                                            write path for `portkey_workspace_defaults`)
 DELETE /admin/workspaces/{id}      → Delete (requires {"name": "..."} in body)
 ```
 
