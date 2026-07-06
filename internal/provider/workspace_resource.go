@@ -467,7 +467,9 @@ func (r *workspaceResource) Update(ctx context.Context, req resource.UpdateReque
 	updateReq.UsageLimits = usageRaw
 	updateReq.RateLimits = rateRaw
 
-	// Handle metadata
+	// Handle metadata. Metadata lives under the `defaults` object on the
+	// wire; guardrails on the same object are owned by the separate
+	// portkey_workspace_defaults resource, so this handler leaves them nil.
 	if !plan.Metadata.IsNull() && !plan.Metadata.IsUnknown() {
 		var metadata map[string]string
 		diags = plan.Metadata.ElementsAs(ctx, &metadata, false)
@@ -475,7 +477,7 @@ func (r *workspaceResource) Update(ctx context.Context, req resource.UpdateReque
 		if resp.Diagnostics.HasError() {
 			return
 		}
-		updateReq.Defaults = &client.WorkspaceDefaults{
+		updateReq.Defaults = &client.UpdateWorkspaceDefaults{
 			Metadata: metadata,
 		}
 	}

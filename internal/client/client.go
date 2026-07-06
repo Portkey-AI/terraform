@@ -196,8 +196,29 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 }
 
 // WorkspaceDefaults represents the defaults configuration for a workspace
+// as returned by GET /admin/workspaces/{id} and accepted by Create.
+//
+// GET returns guardrails as plain string arrays — slugs under admin-API-key
+// auth (see albus getAWorkspace controller), UUIDs for system users. Writes
+// (via UpdateWorkspaceDefaults) accept either UUIDs or slugs.
 type WorkspaceDefaults struct {
-	Metadata map[string]string `json:"metadata,omitempty"`
+	Metadata         map[string]string `json:"metadata,omitempty"`
+	InputGuardrails  []string          `json:"input_guardrails,omitempty"`
+	OutputGuardrails []string          `json:"output_guardrails,omitempty"`
+}
+
+// UpdateWorkspaceDefaults is the write-side of workspace defaults used by
+// UpdateWorkspaceRequest. Input/OutputGuardrails use json.RawMessage so
+// callers can distinguish three states:
+//   - nil:             field omitted → preserve existing guardrails
+//   - marshaled `[]`:  clears all guardrails
+//   - marshaled array: replaces guardrails with the given IDs/slugs
+//
+// Metadata is passed through unchanged.
+type UpdateWorkspaceDefaults struct {
+	Metadata         map[string]string `json:"metadata,omitempty"`
+	InputGuardrails  json.RawMessage   `json:"input_guardrails,omitempty"`
+	OutputGuardrails json.RawMessage   `json:"output_guardrails,omitempty"`
 }
 
 // Workspace represents a Portkey workspace
@@ -287,7 +308,7 @@ type UpdateWorkspaceRequest struct {
 	Name             string                     `json:"name,omitempty"`
 	Icon             json.RawMessage            `json:"icon,omitempty"`
 	Description      string                     `json:"description,omitempty"`
-	Defaults         *WorkspaceDefaults         `json:"defaults,omitempty"`
+	Defaults         *UpdateWorkspaceDefaults   `json:"defaults,omitempty"`
 	RateLimits       json.RawMessage            `json:"rate_limits,omitempty"`
 	UsageLimits      json.RawMessage            `json:"usage_limits,omitempty"`
 	SecuritySettings *WorkspaceSecuritySettings `json:"security_settings,omitempty"`

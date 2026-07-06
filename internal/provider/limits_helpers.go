@@ -275,6 +275,69 @@ func marshalWorkspaceLimitsForUpdate(ctx context.Context, plan *workspaceResourc
 	return usageRaw, rateRaw, diags
 }
 
+// marshalGuardrailsForUpdate converts a list of guardrail id/slug strings
+// into a json.RawMessage suitable for UpdateWorkspaceDefaults. Tri-state:
+//   - cfg is non-null (empty or populated) → marshaled array (empty clears).
+//   - cfg is null and state is null       → nil (omit field, no change).
+//   - cfg is null and state is non-null   → marshaled `[]` (clear guardrails).
+//
+// We prefer sending `[]` over JSONNull because the backend's update handler
+// treats `undefined` as "no change" and any provided value (including `[]`
+// or `null`) enters the guardrail-update code path, which normalizes both
+// null and [] to an empty list on write.
+func marshalGuardrailsForUpdate(ctx context.Context, cfg types.List, state types.List) (json.RawMessage, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if cfg.IsUnknown() {
+		return nil, diags
+	}
+	if cfg.IsNull() {
+		if state.IsNull() {
+			return nil, diags
+		}
+		return json.RawMessage("[]"), diags
+	}
+	var ids []string
+	diags.Append(cfg.ElementsAs(ctx, &ids, false)...)
+	if diags.HasError() {
+		return nil, diags
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	data, err := json.Marshal(ids)
+	if err != nil {
+		diags.AddError("Error marshaling guardrails", err.Error())
+		return nil, diags
+	}
+	return data, diags
+}
+
+// guardrailsFromAPIToList converts the plain string array returned by
+// GET /admin/workspaces into a Terraform list. Strings are slugs under
+// admin-API-key auth and UUIDs for system users — the provider stores
+// them verbatim. Empty strings are skipped. Returns a null list when
+// the input is empty so workspaces that never had guardrails don't
+// diff against a null config.
+func guardrailsFromAPIToList(entries []string) (types.List, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if len(entries) == 0 {
+		return types.ListNull(types.StringType), diags
+	}
+	vals := make([]attr.Value, 0, len(entries))
+	for _, s := range entries {
+		if s == "" {
+			continue
+		}
+		vals = append(vals, types.StringValue(s))
+	}
+	if len(vals) == 0 {
+		return types.ListNull(types.StringType), diags
+	}
+	list, d := types.ListValue(types.StringType, vals)
+	diags.Append(d...)
+	return list, diags
+}
+
 // marshalAPIKeyUsageLimitsForUpdate converts API key usage_limits from a plan
 // into a json.RawMessage for UpdateAPIKeyRequest.
 func marshalAPIKeyUsageLimitsForUpdate(obj types.Object) json.RawMessage {

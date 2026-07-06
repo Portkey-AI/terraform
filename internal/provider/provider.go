@@ -245,6 +245,7 @@ func (p *portkeyProvider) DataSources(_ context.Context) []func() datasource.Dat
 func (p *portkeyProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewWorkspaceResource,
+		NewWorkspaceDefaultsResource,
 		NewWorkspaceMemberResource,
 		NewWorkspaceSecuritySettingsResource,
 		NewUserInviteResource,
