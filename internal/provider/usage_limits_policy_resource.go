@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -113,6 +114,9 @@ func (r *usageLimitsPolicyResource) Schema(_ context.Context, _ resource.SchemaR
 			"periodic_reset": schema.StringAttribute{
 				Description: "Reset period: 'monthly' or 'weekly'. Mutually exclusive with periodic_reset_days.",
 				Optional:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("monthly", "weekly"),
+				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
