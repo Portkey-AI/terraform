@@ -35,18 +35,20 @@ type usageLimitsPoliciesDataSourceModel struct {
 
 // usageLimitsPolicySummaryModel maps policy summary data.
 type usageLimitsPolicySummaryModel struct {
-	ID             types.String  `tfsdk:"id"`
-	Name           types.String  `tfsdk:"name"`
-	WorkspaceID    types.String  `tfsdk:"workspace_id"`
-	Type           types.String  `tfsdk:"type"`
-	CreditLimit    types.Float64 `tfsdk:"credit_limit"`
-	AlertThreshold types.Float64 `tfsdk:"alert_threshold"`
-	PeriodicReset  types.String  `tfsdk:"periodic_reset"`
-	Status         types.String  `tfsdk:"status"`
-	Conditions     types.String  `tfsdk:"conditions"`
-	GroupBy        types.String  `tfsdk:"group_by"`
-	CreatedAt      types.String  `tfsdk:"created_at"`
-	UpdatedAt      types.String  `tfsdk:"updated_at"`
+	ID                types.String  `tfsdk:"id"`
+	Name              types.String  `tfsdk:"name"`
+	WorkspaceID       types.String  `tfsdk:"workspace_id"`
+	Type              types.String  `tfsdk:"type"`
+	CreditLimit       types.Float64 `tfsdk:"credit_limit"`
+	AlertThreshold    types.Float64 `tfsdk:"alert_threshold"`
+	PeriodicReset     types.String  `tfsdk:"periodic_reset"`
+	PeriodicResetDays types.Int64   `tfsdk:"periodic_reset_days"`
+	NextUsageResetAt  types.String  `tfsdk:"next_usage_reset_at"`
+	Status            types.String  `tfsdk:"status"`
+	Conditions        types.String  `tfsdk:"conditions"`
+	GroupBy           types.String  `tfsdk:"group_by"`
+	CreatedAt         types.String  `tfsdk:"created_at"`
+	UpdatedAt         types.String  `tfsdk:"updated_at"`
 }
 
 // Metadata returns the data source type name.
@@ -94,6 +96,14 @@ func (d *usageLimitsPoliciesDataSource) Schema(_ context.Context, _ datasource.S
 						},
 						"periodic_reset": schema.StringAttribute{
 							Description: "Reset period.",
+							Computed:    true,
+						},
+						"periodic_reset_days": schema.Int64Attribute{
+							Description: "Custom reset interval in days (1–365).",
+							Computed:    true,
+						},
+						"next_usage_reset_at": schema.StringAttribute{
+							Description: "ISO8601 datetime for the next scheduled usage reset.",
 							Computed:    true,
 						},
 						"status": schema.StringAttribute{
@@ -182,6 +192,18 @@ func (d *usageLimitsPoliciesDataSource) Read(ctx context.Context, req datasource
 			policyState.PeriodicReset = types.StringValue(policy.PeriodicReset)
 		} else {
 			policyState.PeriodicReset = types.StringNull()
+		}
+
+		if policy.PeriodicResetDays != nil {
+			policyState.PeriodicResetDays = types.Int64Value(int64(*policy.PeriodicResetDays))
+		} else {
+			policyState.PeriodicResetDays = types.Int64Null()
+		}
+
+		if policy.NextUsageResetAt != "" {
+			policyState.NextUsageResetAt = types.StringValue(policy.NextUsageResetAt)
+		} else {
+			policyState.NextUsageResetAt = types.StringNull()
 		}
 
 		if policy.Conditions != nil {

@@ -72,6 +72,59 @@ func TestAccUsageLimitsPolicyResource_updateName(t *testing.T) {
 	})
 }
 
+func TestAccUsageLimitsPolicyResource_periodicResetDays(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-reset-days")
+	workspaceID := getTestWorkspaceID()
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccUsageLimitsPolicyResourceConfigWithResetDays(rName, workspaceID, 1000.0, 30),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_usage_limits_policy.test", "id"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "name", rName),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "periodic_reset_days", "30"),
+					resource.TestCheckResourceAttrSet("portkey_usage_limits_policy.test", "next_usage_reset_at"),
+				),
+			},
+			// ImportState testing
+			{
+				ResourceName:            "portkey_usage_limits_policy.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
+			},
+		},
+	})
+}
+
+func testAccUsageLimitsPolicyResourceConfigWithResetDays(name, workspaceID string, creditLimit float64, resetDays int) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_usage_limits_policy" "test" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  conditions   = jsonencode([
+    {
+      key   = "workspace_id"
+      value = %[2]q
+    }
+  ])
+  group_by = jsonencode([
+    {
+      key = "api_key"
+    }
+  ])
+  type                = "cost"
+  credit_limit        = %[3]f
+  periodic_reset_days = %[4]d
+}
+`, name, workspaceID, creditLimit, resetDays)
+}
+
 func testAccUsageLimitsPolicyResourceConfig(name, workspaceID string, creditLimit float64) string {
 	return fmt.Sprintf(`
 provider "portkey" {}
