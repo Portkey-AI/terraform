@@ -178,5 +178,43 @@ Each mapping has:
 - `target_field` — `"key"` for the provider API key, or `"configurations.<field>"` for a single sensitive field inside `configurations` (e.g. `"configurations.aws_secret_access_key"`). Must be unique within the set.
 - `secret_reference_id` — the `slug` or UUID of the `portkey_secret_reference`.
 - `secret_key` *(optional)* — overrides the reference's own `secret_key` for this single field, when one vault entry holds a JSON payload with multiple values.
+- `value_format` *(optional)* — `"string"` (default) or `"json"`. Use `"json"` when the target field expects a structured object (for example `configurations.vertex_service_account_json`) and the secret store returns the value as a JSON-encoded string. The gateway will `JSON.parse` the payload before injecting it. Without this, an object-valued target receives a raw string and downstream property lookups fail.
 
 When `target_field = "key"` is present, the inline `key` / `key_wo` arguments can be omitted. Omitting `secret_mappings` entirely preserves prior behaviour for existing integrations; setting it to `[]` explicitly clears all mappings. See the [secret reference resource docs](./secret_reference.md#using-a-secret-reference-in-a-portkey_integration) for more patterns (Bedrock, Vertex AI, Azure OpenAI, etc.).
+
+### Vertex AI Service Account JSON via HashiCorp Vault
+
+For Vertex AI service-account auth backed by a Vault-stored SA JSON, set `value_format = "json"` so the gateway parses the raw Vault string into the object shape Vertex expects.
+
+```terraform
+resource "portkey_secret_reference" "vertex_sa" {
+  name         = "vertex-sa-prod"
+  manager_type = "hashicorp_vault"
+  secret_path  = "secret/data/portkey/vertex-sa"
+  secret_key   = "vertex_service_account_json"
+
+  vault_kubernetes_auth = {
+    vault_auth_type = "kubernetes"
+    vault_addr      = "https://vault.internal:8200"
+    vault_role      = "portkey-gateway"
+  }
+}
+
+resource "portkey_integration" "vertex" {
+  name           = "vertex-prod"
+  ai_provider_id = "vertex-ai"
+  configurations = jsonencode({
+    vertex_auth_type    = "serviceAccount"
+    vertex_region       = "global"
+    vertex_map_metadata = true
+  })
+
+  secret_mappings = [
+    {
+      target_field        = "configurations.vertex_service_account_json"
+      secret_reference_id = portkey_secret_reference.vertex_sa.slug
+      value_format        = "json"
+    },
+  ]
+}
+```

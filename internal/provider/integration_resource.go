@@ -36,6 +36,7 @@ var secretMappingAttrTypes = map[string]attr.Type{
 	"target_field":        types.StringType,
 	"secret_reference_id": types.StringType,
 	"secret_key":          types.StringType,
+	"value_format":        types.StringType,
 }
 
 // secretMappingTargetFieldRegex enforces the two legal shapes documented by
@@ -175,6 +176,13 @@ func (r *integrationResource) Schema(_ context.Context, _ resource.SchemaRequest
 						"secret_key": schema.StringAttribute{
 							Description: "Optional override for the secret reference's `secret_key`. Use to pick a specific field out of a multi-value (JSON) secret payload. When unset, the `secret_key` configured on the secret reference itself is used.",
 							Optional:    true,
+						},
+						"value_format": schema.StringAttribute{
+							Description: "How the resolved secret is interpreted before being injected into `target_field`. `\"string\"` (default) leaves the value as-is; `\"json\"` parses a JSON-encoded string payload into an object. Use `\"json\"` for object-valued fields such as `configurations.vertex_service_account_json` when the secret store (e.g. HashiCorp Vault KV) returns the value as a JSON-encoded string.",
+							Optional:    true,
+							Validators: []validator.String{
+								stringvalidator.OneOf("string", "json"),
+							},
 						},
 					},
 				},
@@ -758,6 +766,7 @@ type secretMappingModel struct {
 	TargetField       types.String `tfsdk:"target_field"`
 	SecretReferenceID types.String `tfsdk:"secret_reference_id"`
 	SecretKey         types.String `tfsdk:"secret_key"`
+	ValueFormat       types.String `tfsdk:"value_format"`
 }
 
 // secretMappingsToClient projects a plan/state Set into the slice shape the
@@ -792,6 +801,10 @@ func secretMappingsToClient(ctx context.Context, set types.Set) (*[]client.Secre
 			v := m.SecretKey.ValueString()
 			mapping.SecretKey = &v
 		}
+		if !m.ValueFormat.IsNull() && !m.ValueFormat.IsUnknown() {
+			v := m.ValueFormat.ValueString()
+			mapping.ValueFormat = &v
+		}
 		out = append(out, mapping)
 	}
 	return &out, diags
@@ -822,9 +835,13 @@ func secretMappingsFromClient(mappings []client.SecretMapping, prior types.Set) 
 			"target_field":        types.StringValue(m.TargetField),
 			"secret_reference_id": types.StringValue(m.SecretReferenceID),
 			"secret_key":          types.StringNull(),
+			"value_format":        types.StringNull(),
 		}
 		if m.SecretKey != nil {
 			attrs["secret_key"] = types.StringValue(*m.SecretKey)
+		}
+		if m.ValueFormat != nil {
+			attrs["value_format"] = types.StringValue(*m.ValueFormat)
 		}
 		obj, d := types.ObjectValue(secretMappingAttrTypes, attrs)
 		diags.Append(d...)
