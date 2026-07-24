@@ -88,6 +88,8 @@ func TestAccUsageLimitsPolicyResource_excludes(t *testing.T) {
 					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test_excludes", "name", rName),
 					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test_excludes", "type", "cost"),
 					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test_excludes", "status", "active"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test_excludes", "conditions", "[{\"excludes\":[\"gpt-4-mini\",\"gpt-4o-mini\"],\"key\":\"model\",\"value\":[\"gpt-4\",\"gpt-4o\"]}]"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test_excludes", "group_by", "[{\"key\":\"api_key\"}]"),
 				),
 			},
 			// ImportState testing — conditions (including excludes) should survive round-trip
