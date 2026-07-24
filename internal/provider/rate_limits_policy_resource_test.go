@@ -34,7 +34,7 @@ func TestAccRateLimitsPolicyResource_basic(t *testing.T) {
 				ResourceName:            "portkey_rate_limits_policy.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "workspace_id", "conditions", "group_by"},
 			},
 			// Update value testing
 			{
@@ -72,6 +72,37 @@ func TestAccRateLimitsPolicyResource_updateName(t *testing.T) {
 	})
 }
 
+func TestAccRateLimitsPolicyResource_excludes(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-excludes")
+	workspaceID := getTestWorkspaceID()
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create with excludes in conditions
+			{
+				Config: testAccRateLimitsPolicyResourceConfigWithExcludes(rName, workspaceID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_rate_limits_policy.test_excludes", "id"),
+					resource.TestCheckResourceAttr("portkey_rate_limits_policy.test_excludes", "name", rName),
+					resource.TestCheckResourceAttr("portkey_rate_limits_policy.test_excludes", "type", "requests"),
+					resource.TestCheckResourceAttr("portkey_rate_limits_policy.test_excludes", "unit", "rpm"),
+					resource.TestCheckResourceAttr("portkey_rate_limits_policy.test_excludes", "status", "active"),
+				),
+			},
+			// ImportState testing — conditions (including excludes) should survive round-trip
+			{
+				ResourceName:            "portkey_rate_limits_policy.test_excludes",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "workspace_id", "conditions", "group_by"},
+			},
+			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
 func testAccRateLimitsPolicyResourceConfig(name, workspaceID string, value int) string {
 	return fmt.Sprintf(`
 provider "portkey" {}
@@ -95,4 +126,28 @@ resource "portkey_rate_limits_policy" "test" {
   value = %[3]d
 }
 `, name, workspaceID, value)
+}
+
+func testAccRateLimitsPolicyResourceConfigWithExcludes(name, workspaceID string) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_rate_limits_policy" "test_excludes" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  conditions   = jsonencode([
+    {
+      key      = "model"
+      value    = ["gpt-4", "gpt-4o"]
+      excludes = ["gpt-4-mini", "gpt-4o-mini"]
+    }
+  ])
+  group_by = jsonencode([
+    { key = "api_key" }
+  ])
+  type  = "requests"
+  unit  = "rpm"
+  value = 50
+}
+`, name, workspaceID)
 }

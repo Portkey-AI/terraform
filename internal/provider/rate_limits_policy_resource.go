@@ -75,7 +75,7 @@ func (r *rateLimitsPolicyResource) Schema(_ context.Context, _ resource.SchemaRe
 				},
 			},
 			"conditions": schema.StringAttribute{
-				Description: "JSON array of conditions that define which requests the policy applies to. Each condition has 'key' and 'value'.",
+				Description: "JSON array of conditions that define which requests the policy applies to. Each condition has 'key', 'value' (string or array of strings), and an optional 'excludes' (string or array of strings).",
 				Required:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
@@ -200,7 +200,11 @@ func (r *rateLimitsPolicyResource) Create(ctx context.Context, req resource.Crea
 	}
 
 	// Map response body to schema
+	plannedConditions := plan.Conditions
+	plannedGroupBy := plan.GroupBy
 	r.mapPolicyToState(&plan, policy, false)
+	plan.Conditions = preserveJSONFormatting(plannedConditions.ValueString(), plan.Conditions.ValueString())
+	plan.GroupBy = preserveJSONFormatting(plannedGroupBy.ValueString(), plan.GroupBy.ValueString())
 
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
@@ -292,7 +296,11 @@ func (r *rateLimitsPolicyResource) Update(ctx context.Context, req resource.Upda
 	}
 
 	// Map response to plan
+	plannedConditions := plan.Conditions
+	plannedGroupBy := plan.GroupBy
 	r.mapPolicyToState(&plan, policy, false)
+	plan.Conditions = preserveJSONFormatting(plannedConditions.ValueString(), plan.Conditions.ValueString())
+	plan.GroupBy = preserveJSONFormatting(plannedGroupBy.ValueString(), plan.GroupBy.ValueString())
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
