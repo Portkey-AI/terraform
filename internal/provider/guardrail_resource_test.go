@@ -161,6 +161,76 @@ func TestAccGuardrailResource_multipleChecks(t *testing.T) {
 	})
 }
 
+// TestAccGuardrailResource_organisationScoped tests the full CRUD lifecycle of
+// an organisation-scoped guardrail, created by omitting workspace_id. The API
+// derives the organisation from the Admin API key, and workspace_id must stay
+// null in state (rather than "") so a config that omits it shows no drift.
+func TestAccGuardrailResource_organisationScoped(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-orgguard")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read
+			{
+				Config: testAccGuardrailResourceConfigOrgScoped(rName, 1000),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_guardrail.test", "id"),
+					resource.TestCheckResourceAttrSet("portkey_guardrail.test", "slug"),
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "status", "active"),
+					resource.TestCheckNoResourceAttr("portkey_guardrail.test", "workspace_id"),
+				),
+			},
+			// Re-apply must be a no-op: workspace_id must not drift to "".
+			{
+				Config:   testAccGuardrailResourceConfigOrgScoped(rName, 1000),
+				PlanOnly: true,
+			},
+			// Import
+			{
+				ResourceName:            "portkey_guardrail.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
+			},
+			// Update in place (checks change), still org-scoped.
+			{
+				Config: testAccGuardrailResourceConfigOrgScoped(rName, 2000),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
+					resource.TestCheckNoResourceAttr("portkey_guardrail.test", "workspace_id"),
+				),
+			},
+			// Delete happens automatically in TestCase.
+		},
+	})
+}
+
+func testAccGuardrailResourceConfigOrgScoped(name string, maxWords int) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_guardrail" "test" {
+  name   = %[1]q
+  checks = jsonencode([
+    {
+      id = "default.wordCount"
+      parameters = {
+        minWords = 1
+        maxWords = %[2]d
+      }
+    }
+  ])
+  actions = jsonencode({
+    onFail  = "log"
+    message = "Word count check failed"
+  })
+}
+`, name, maxWords)
+}
+
 func testAccGuardrailResourceConfig(name, workspaceID string) string {
 	return fmt.Sprintf(`
 provider "portkey" {}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
 
 func TestMarshalGuardrailsForUpdate(t *testing.T) {
@@ -129,6 +130,78 @@ func TestGuardrailsFromAPIToList(t *testing.T) {
 			for i := range ids {
 				if ids[i] != tc.want[i] {
 					t.Fatalf("id[%d] = %q, want %q", i, ids[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestOrganisationGuardrailRefsToList(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []client.OrganisationGuardrailRef
+		want []string
+		null bool
+	}{
+		{
+			name: "nil input returns null list",
+			in:   nil,
+			null: true,
+		},
+		{
+			name: "empty input returns null list",
+			in:   []client.OrganisationGuardrailRef{},
+			null: true,
+		},
+		{
+			name: "slug is preferred over id",
+			in: []client.OrganisationGuardrailRef{
+				{ID: "11111111-1111-1111-1111-111111111111", Slug: "gr_one"},
+				{ID: "22222222-2222-2222-2222-222222222222", Slug: "gr_two"},
+			},
+			want: []string{"gr_one", "gr_two"},
+		},
+		{
+			name: "falls back to id when slug is missing",
+			in: []client.OrganisationGuardrailRef{
+				{ID: "11111111-1111-1111-1111-111111111111"},
+				{ID: "22222222-2222-2222-2222-222222222222", Slug: "gr_two"},
+			},
+			want: []string{"11111111-1111-1111-1111-111111111111", "gr_two"},
+		},
+		{
+			name: "entries with neither id nor slug are dropped",
+			in:   []client.OrganisationGuardrailRef{{}, {}},
+			null: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, diags := organisationGuardrailRefsToList(tc.in)
+			if diags.HasError() {
+				t.Fatalf("unexpected diags: %v", diags)
+			}
+			if tc.null {
+				if !got.IsNull() {
+					t.Fatalf("expected null list, got %v", got)
+				}
+				return
+			}
+			if got.IsNull() {
+				t.Fatalf("expected populated list, got null")
+			}
+			var entries []string
+			diags = got.ElementsAs(context.Background(), &entries, false)
+			if diags.HasError() {
+				t.Fatalf("ElementsAs failed: %v", diags)
+			}
+			if len(entries) != len(tc.want) {
+				t.Fatalf("expected %d entries, got %d (%v)", len(tc.want), len(entries), entries)
+			}
+			for i := range entries {
+				if entries[i] != tc.want[i] {
+					t.Fatalf("entry[%d] = %q, want %q", i, entries[i], tc.want[i])
 				}
 			}
 		})

@@ -74,8 +74,10 @@ func (r *guardrailResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Required:    true,
 			},
 			"workspace_id": schema.StringAttribute{
-				Description: "Workspace ID to create the guardrail in.",
-				Required:    true,
+				Description: "Workspace ID to create the guardrail in. Omit to create an " +
+					"organisation-scoped guardrail in the organisation owning the configured Admin " +
+					"API key — required for guardrails referenced by portkey_organisation_defaults.",
+				Optional: true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -352,9 +354,15 @@ func (r *guardrailResource) mapGuardrailToState(state *guardrailResourceModel, g
 	state.ID = types.StringValue(guardrail.ID)
 	state.Slug = types.StringValue(guardrail.Slug)
 	state.Name = types.StringValue(guardrail.Name)
-	// Always preserve workspace_id from state if set (API returns UUID but user may have provided slug)
+	// Always preserve workspace_id from state if set (API returns UUID but user may have provided slug).
+	// Organisation-scoped guardrails have no workspace, and the API returns an empty string for them;
+	// mapping that to null (rather than "") keeps state consistent with a config that omits the attribute.
 	if state.WorkspaceID.IsNull() || state.WorkspaceID.IsUnknown() {
-		state.WorkspaceID = types.StringValue(guardrail.WorkspaceID)
+		if guardrail.WorkspaceID != "" {
+			state.WorkspaceID = types.StringValue(guardrail.WorkspaceID)
+		} else {
+			state.WorkspaceID = types.StringNull()
+		}
 	}
 	state.Status = types.StringValue(guardrail.Status)
 	state.VersionID = types.StringValue(guardrail.VersionID)

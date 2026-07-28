@@ -141,6 +141,7 @@ func TestProvider_HasChildResources(t *testing.T) {
 	expectedResources := []string{
 		"portkey_workspace",
 		"portkey_workspace_defaults",
+		"portkey_organisation_defaults",
 		"portkey_workspace_member",
 		"portkey_workspace_security_settings",
 		"portkey_user_invite",

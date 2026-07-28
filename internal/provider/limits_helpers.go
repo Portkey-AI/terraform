@@ -338,6 +338,36 @@ func guardrailsFromAPIToList(entries []string) (types.List, diag.Diagnostics) {
 	return list, diags
 }
 
+// organisationGuardrailRefsToList converts the {id, slug} objects returned
+// by GET /v2/admin/organisation/defaults into a flat Terraform string list.
+// Slugs are preferred (they are what users reference via
+// portkey_guardrail.foo.slug), falling back to the UUID when the API omits
+// the slug. Returns a null list when the input is empty so organisations
+// that never had guardrails don't diff against a null config.
+func organisationGuardrailRefsToList(refs []client.OrganisationGuardrailRef) (types.List, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if len(refs) == 0 {
+		return types.ListNull(types.StringType), diags
+	}
+	vals := make([]attr.Value, 0, len(refs))
+	for _, ref := range refs {
+		entry := ref.Slug
+		if entry == "" {
+			entry = ref.ID
+		}
+		if entry == "" {
+			continue
+		}
+		vals = append(vals, types.StringValue(entry))
+	}
+	if len(vals) == 0 {
+		return types.ListNull(types.StringType), diags
+	}
+	list, d := types.ListValue(types.StringType, vals)
+	diags.Append(d...)
+	return list, diags
+}
+
 // marshalAPIKeyUsageLimitsForUpdate converts API key usage_limits from a plan
 // into a json.RawMessage for UpdateAPIKeyRequest.
 func marshalAPIKeyUsageLimitsForUpdate(obj types.Object) json.RawMessage {

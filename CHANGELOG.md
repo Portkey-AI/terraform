@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`portkey_organisation_defaults` resource** — manage default `input_guardrails` / `output_guardrails` for the whole organisation via `GET`/`PUT /v2/admin/organisation/defaults`. These are the first `/v2` endpoints used by the provider, so the client swaps the `/v1` suffix on the configured `base_url` for `/v2`. The resource is a singleton: the Admin API derives the organisation from the API key, so there is no `organisation_id` attribute, exactly one instance may exist per provider configuration, and `terraform import` ignores the supplied ID (`id` is always `organisation_defaults`). At least one of the two lists must be set — the API rejects a write carrying neither, and the provider surfaces this at plan time rather than as a 400 on apply. Only organisation-scoped guardrails are accepted; passing a workspace-scoped guardrail fails with `Workspace-scoped guardrails cannot be set as organisation defaults`. Setting a list to `[]` always clears it; omitting an attribute preserves existing guardrails on create but clears them on update (same semantics as `portkey_workspace_defaults`, see resource docs). Reads return both guardrail IDs and slugs and the provider stores slugs, so reference guardrails via `portkey_guardrail.foo.slug` to avoid a permanent plan diff. Destroying the resource clears both lists; there is no separate delete endpoint. Requires the `organisation_settings.read` / `organisation_settings.update` scopes on the Admin API key.
+- **Organisation-scoped `portkey_guardrail` support** — `workspace_id` is now optional. Omitting it creates an organisation-scoped guardrail, which is what `portkey_organisation_defaults` requires; the organisation is taken from the Admin API key (the `/guardrails` create controller never reads `organisation_id` from the body, so scope is decided purely by the presence of `workspace_id`). Existing configurations are unaffected, since setting `workspace_id` keeps the previous workspace-scoped behaviour and scope remains immutable (changing it forces replacement). Creating organisation-scoped guardrails requires the `organisation_guardrails` permission on the Admin API key.
+
+### Fixed
+- **`portkey_guardrail` empty `workspace_id` in state** — an organisation-scoped guardrail (no workspace) is returned by the API with an empty `workspace_id`, which the provider stored as `""` instead of null and would surface as a permanent plan diff against a config that omits the attribute. The API's empty string now maps back to null.
+
 ## [0.2.29] - 2026-07-07
 
 ### Added
