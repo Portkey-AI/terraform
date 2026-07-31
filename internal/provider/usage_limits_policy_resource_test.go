@@ -97,7 +97,7 @@ func TestAccUsageLimitsPolicyResource_excludes(t *testing.T) {
 				ResourceName:            "portkey_usage_limits_policy.test_excludes",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "conditions"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
 			},
 			// Delete testing automatically occurs in TestCase
 		},
