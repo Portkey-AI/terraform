@@ -218,8 +218,16 @@ func (r *usageLimitsPolicyResource) Create(ctx context.Context, req resource.Cre
 		return
 	}
 
+	// Preserve plan values for RequiresReplace JSON attributes so Terraform's
+	// post-apply consistency check doesn't fail due to key ordering differences.
+	planConditions := plan.Conditions
+	planGroupBy := plan.GroupBy
+
 	// Map response body to schema
 	r.mapPolicyToState(&plan, policy, false)
+
+	plan.Conditions = planConditions
+	plan.GroupBy = planGroupBy
 
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
