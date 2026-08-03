@@ -1852,10 +1852,13 @@ func (c *Client) DeleteGuardrail(ctx context.Context, slugOrID string) error {
 	return err
 }
 
-// PolicyCondition represents a condition in a policy
+// PolicyCondition represents a condition in a policy.
+// Value and Excludes use json.RawMessage because the API accepts both
+// a single string (e.g. "key1") and an array of strings (e.g. ["key1","key2"]).
 type PolicyCondition struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	Key      string          `json:"key"`
+	Value    json.RawMessage `json:"value"`
+	Excludes json.RawMessage `json:"excludes,omitempty"`
 }
 
 // PolicyGroupBy represents a group by field in a policy

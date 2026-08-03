@@ -17,7 +17,7 @@ Manages a Portkey rate limits policy. Controls the rate of requests or tokens co
 
 ### Required
 
-- `conditions` (String) JSON array of conditions that define which requests the policy applies to. Each condition has 'key' and 'value'.
+- `conditions` (String) JSON array of conditions that define which requests the policy applies to. Each condition has 'key', 'value' (string or array of strings), and an optional 'excludes' (string or array of strings).
 - `group_by` (String) JSON array of group by fields that define how rate limiting is applied. Each item has 'key'.
 - `type` (String) Policy type: 'requests' or 'tokens'.
 - `unit` (String) Rate unit: 'rpm' (per minute), 'rph' (per hour), or 'rpd' (per day).
