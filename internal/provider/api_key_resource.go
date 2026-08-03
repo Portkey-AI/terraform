@@ -1043,8 +1043,10 @@ func (r *apiKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 	// Get refreshed API key value from Portkey
 	apiKey, err := r.client.GetAPIKey(ctx, state.ID.ValueString())
 	if err != nil {
-		// Check if it's a 404 (not found)
-		if strings.Contains(err.Error(), "404") {
+		// Portkey returns 404 for deleted keys, but 403 (AB03) for keys
+		// whose owning user has been removed from the organisation. Both
+		// mean the key is gone from Terraform's perspective.
+		if client.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
