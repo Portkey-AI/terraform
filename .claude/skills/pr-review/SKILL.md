@@ -42,11 +42,26 @@ golangci-lint run
 
 ```bash
 # Load environment variables and run acceptance tests
-source .env && TF_ACC=1 go test ./internal/provider -v -timeout 30m
+set -a && source .env && set +a && \
+  TF_ACC=1 TF_ACC_TERRAFORM_PATH=$(which terraform) \
+  go test ./internal/provider -v -timeout 30m
 
 # Or run tests for specific resources
-source .env && TF_ACC=1 go test ./internal/provider -v -run TestAccPromptPartial -timeout 10m
+set -a && source .env && set +a && \
+  TF_ACC=1 TF_ACC_TERRAFORM_PATH=$(which terraform) \
+  go test ./internal/provider -v -run TestAccPromptPartial -timeout 10m
 ```
+
+**Do not use a bare `source .env`.** It sets shell variables without exporting
+them, so `PORTKEY_API_KEY` never reaches the test process, `testAccPreCheck`
+skips every acceptance test, and the run reports `ok` having tested nothing —
+the exact failure this section exists to prevent. `set -a` exports them.
+`TF_ACC_TERRAFORM_PATH` is needed when the `terraform` binary isn't on the
+path the test harness searches.
+
+Sanity-check that tests actually ran: the output must contain `--- PASS:` lines
+for the tests you targeted. A run that prints only `ok ... 0.5s`, or `--- SKIP:`,
+means the credentials never arrived.
 
 The `.env` file contains:
 - `PORTKEY_API_KEY` - Org-level API key for testing
@@ -119,7 +134,7 @@ gh pr review <PR-number> --approve --body "Your approval message"
 - [ ] Code compiles without errors
 - [ ] You understand what the code does
 
-**WARNING:** A green CI does NOT mean tests pass. CI skips acceptance tests (`TF_ACC` not set). Always run `source .env && TF_ACC=1 go test ./internal/provider -v` yourself.
+**WARNING:** A green CI does NOT mean tests pass. CI skips acceptance tests (`TF_ACC` not set). Always run them yourself using the exact invocation in section 2.0, and confirm you see `--- PASS:` lines rather than a bare `ok`.
 
 ---
 
