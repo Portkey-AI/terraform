@@ -156,33 +156,79 @@ Edit `CHANGELOG.md`:
 1. Add entry under `[Unreleased]` describing what was added/changed/fixed
 2. Follow the existing format and categorization (Added, Changed, Fixed, etc.)
 
+**`main` is protected — this cannot be committed directly.** See Phase 6 for
+the branch-and-PR flow; the CHANGELOG edit has to ride in a PR like anything
+else. If you're releasing straight away, skip this phase and fold the entry
+into the release PR instead of raising two.
+
+Before writing the entry, check what actually landed since the last tag —
+merged PRs routinely miss their CHANGELOG update, and the release is the last
+chance to catch them:
+
+```bash
+git log --oneline <last-tag>..HEAD --merges
+```
+
 ---
 
 ## Phase 6: Release
 
-When ready to release (can batch multiple PRs):
+When ready to release (can batch multiple PRs).
+
+**`main` is protected by the org-level ruleset "Primary Rules"
+(`deletion`, `non_fast_forward`, `pull_request`), so `git push origin main`
+is rejected.** Every change to `main`, including a one-line CHANGELOG edit,
+goes through a PR. The ruleset requires:
+
+- 1 approving review, and **`bypass_actors` is empty** — repo admins get no override
+- `require_last_push_approval` — any push after approval dismisses it
+- `dismiss_stale_reviews_on_push` and `required_review_thread_resolution`
+
+**You cannot approve your own PR.** GitHub blocks self-approval, so a release
+PR you author needs a *second maintainer* to approve it. Plan for that
+handoff — don't start a release you can't finish, and tell the user up front
+that the merge will block on someone else.
 
 ```bash
-# 1. Update CHANGELOG.md
+# 1. Branch first — naming convention is chore/release-vX.Y.Z (see PR #53)
+git checkout main && git pull
+git checkout -b chore/release-vX.Y.Z
+
+# 2. Update CHANGELOG.md
 #    - Change [Unreleased] to [X.Y.Z] - YYYY-MM-DD
 #    - Add new empty [Unreleased] section
-#    - Update comparison links at bottom
+#    - Update comparison links at the bottom (add the new version, and
+#      repoint [Unreleased] to compare/vX.Y.Z...HEAD)
 
-# 2. Commit and push
+# 3. Commit, push, open the PR
 git add CHANGELOG.md
 git commit -m "chore: update CHANGELOG for vX.Y.Z"
-git push origin main
+git push -u origin chore/release-vX.Y.Z
+gh pr create --title "chore: update CHANGELOG for vX.Y.Z" --body "..."
 
-# 3. Create and push tag
+# 4. Wait for CI, then STOP and get an approval from another maintainer.
+#    gh pr view <PR> --json mergeStateStatus,reviewDecision
+#    BLOCKED / REVIEW_REQUIRED means the approval is still outstanding.
+gh pr merge <PR-number> --merge
+
+# 5. Tag only AFTER the CHANGELOG PR is merged, from updated main.
+#    The ruleset targets branches, not tags, so pushing a tag is a
+#    direct push and works fine.
+git checkout main && git pull
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
 
-# 4. Monitor release
+# 6. Monitor release
 gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId -q '.[0].databaseId') --exit-status
 
-# 5. Verify
+# 7. Verify
 gh release view vX.Y.Z
 ```
+
+Tagging a commit whose CHANGELOG PR hasn't merged ships a release whose notes
+don't match its contents, and the tag can't be moved afterward
+(`non_fast_forward`). Confirm `git log --oneline -1` on `main` is the merge
+commit before step 5.
 
 ---
 
@@ -198,6 +244,27 @@ The `golangci-lint` configuration may have compatibility issues with certain Go 
 If rebasing a PR branch and `git push --force-with-lease` fails with "stale info":
 ```bash
 git push --force  # Use with caution, only on PR branches
+```
+
+### PR Stuck at `BLOCKED` / `REVIEW_REQUIRED`
+The org ruleset requires one approving review and has no bypass actors, so
+this is normal for a PR you authored yourself — GitHub won't let you approve
+your own. Get another maintainer to approve; there is no admin override.
+Check what's actually outstanding with:
+```bash
+gh pr view <PR-number> --json mergeStateStatus,reviewDecision
+gh api repos/Portkey-AI/terraform-provider-portkey/rulesets/15003178 \
+  --jq '.rules[] | select(.type=="pull_request") | .parameters'
+```
+`BLOCKED` with `reviewDecision=APPROVED` means something else is pending —
+usually an unresolved review thread (`required_review_thread_resolution`), or
+an approval dismissed by a later push (`require_last_push_approval`).
+
+### `no checks reported on the '<branch>' branch`
+CI takes up to a minute to register on a freshly pushed branch. Re-check
+before concluding the workflow didn't trigger:
+```bash
+gh run list --branch <branch> --limit 5
 ```
 
 ### CI Flakiness
