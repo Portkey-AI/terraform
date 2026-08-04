@@ -115,7 +115,7 @@ func (r *usageLimitsPolicyResource) Schema(_ context.Context, _ resource.SchemaR
 				Optional:    true,
 			},
 			"periodic_reset": schema.StringAttribute{
-				Description: "Reset period: 'monthly' or 'weekly'. Mutually exclusive with periodic_reset_days.",
+				Description: "Reset period: 'monthly' or 'weekly'. Mutually exclusive with periodic_reset_days. If neither is provided, the limit is cumulative.",
 				Optional:    true,
 				Validators: []validator.String{
 					stringvalidator.OneOf("monthly", "weekly"),
@@ -137,9 +137,6 @@ func (r *usageLimitsPolicyResource) Schema(_ context.Context, _ resource.SchemaR
 			"next_usage_reset_at": schema.StringAttribute{
 				Description: "ISO8601 datetime for the next scheduled usage reset. Computed by the API when periodic_reset or periodic_reset_days is set.",
 				Computed:    true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
 			},
 			"status": schema.StringAttribute{
 				Description: "Status of the policy (active, archived).",
