@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -72,6 +73,66 @@ func TestAccUsageLimitsPolicyResource_updateName(t *testing.T) {
 	})
 }
 
+func TestAccUsageLimitsPolicyResource_periodicResetDays(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-reset-days")
+	workspaceID := getTestWorkspaceID()
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccUsageLimitsPolicyResourceConfigWithResetDays(rName, workspaceID, 1000.0, 30),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_usage_limits_policy.test", "id"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "name", rName),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "periodic_reset_days", "30"),
+					resource.TestCheckNoResourceAttr("portkey_usage_limits_policy.test", "periodic_reset"),
+					resource.TestCheckResourceAttrSet("portkey_usage_limits_policy.test", "next_usage_reset_at"),
+				),
+			},
+			// ImportState testing
+			{
+				ResourceName:            "portkey_usage_limits_policy.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
+			},
+			// In-place update: credit_limit changes, reset days do not
+			{
+				Config: testAccUsageLimitsPolicyResourceConfigWithResetDays(rName, workspaceID, 2000.0, 30),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "credit_limit", "2000"),
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "periodic_reset_days", "30"),
+				),
+			},
+			// Changing the day-count must force replacement
+			{
+				Config: testAccUsageLimitsPolicyResourceConfigWithResetDays(rName, workspaceID, 2000.0, 60),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_usage_limits_policy.test", "periodic_reset_days", "60"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccUsageLimitsPolicyResource_conflictingResetOptions(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-reset-conflict")
+	workspaceID := getTestWorkspaceID()
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccUsageLimitsPolicyResourceConfigConflicting(rName, workspaceID),
+				ExpectError: regexp.MustCompile(`mutually exclusive`),
+			},
+		},
+	})
+}
+
 func TestAccUsageLimitsPolicyResource_excludes(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-excludes")
 	workspaceID := getTestWorkspaceID()
@@ -102,6 +163,57 @@ func TestAccUsageLimitsPolicyResource_excludes(t *testing.T) {
 			// Delete testing automatically occurs in TestCase
 		},
 	})
+}
+
+func testAccUsageLimitsPolicyResourceConfigWithResetDays(name, workspaceID string, creditLimit float64, resetDays int) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_usage_limits_policy" "test" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  conditions   = jsonencode([
+    {
+      key   = "workspace_id"
+      value = %[2]q
+    }
+  ])
+  group_by = jsonencode([
+    {
+      key = "api_key"
+    }
+  ])
+  type                = "cost"
+  credit_limit        = %[3]f
+  periodic_reset_days = %[4]d
+}
+`, name, workspaceID, creditLimit, resetDays)
+}
+
+func testAccUsageLimitsPolicyResourceConfigConflicting(name, workspaceID string) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_usage_limits_policy" "test" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  conditions   = jsonencode([
+    {
+      key   = "workspace_id"
+      value = %[2]q
+    }
+  ])
+  group_by = jsonencode([
+    {
+      key = "api_key"
+    }
+  ])
+  type                = "cost"
+  credit_limit        = 1000.0
+  periodic_reset      = "monthly"
+  periodic_reset_days = 30
+}
+`, name, workspaceID)
 }
 
 func testAccUsageLimitsPolicyResourceConfig(name, workspaceID string, creditLimit float64) string {

@@ -1868,32 +1868,35 @@ type PolicyGroupBy struct {
 
 // UsageLimitsPolicy represents a Portkey usage limits policy
 type UsageLimitsPolicy struct {
-	ID             string            `json:"id"`
-	Name           string            `json:"name,omitempty"`
-	Conditions     []PolicyCondition `json:"conditions"`
-	GroupBy        []PolicyGroupBy   `json:"group_by"`
-	Type           string            `json:"type"`
-	CreditLimit    float64           `json:"credit_limit"`
-	AlertThreshold *float64          `json:"alert_threshold,omitempty"`
-	PeriodicReset  string            `json:"periodic_reset,omitempty"`
-	Status         string            `json:"status"`
-	WorkspaceID    string            `json:"workspace_id"`
-	OrganisationID string            `json:"organisation_id"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"last_updated_at"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name,omitempty"`
+	Conditions        []PolicyCondition `json:"conditions"`
+	GroupBy           []PolicyGroupBy   `json:"group_by"`
+	Type              string            `json:"type"`
+	CreditLimit       float64           `json:"credit_limit"`
+	AlertThreshold    *float64          `json:"alert_threshold,omitempty"`
+	PeriodicReset     string            `json:"periodic_reset,omitempty"`
+	PeriodicResetDays *int              `json:"periodic_reset_days,omitempty"`
+	NextUsageResetAt  string            `json:"next_usage_reset_at,omitempty"`
+	Status            string            `json:"status"`
+	WorkspaceID       string            `json:"workspace_id"`
+	OrganisationID    string            `json:"organisation_id"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"last_updated_at"`
 }
 
 // CreateUsageLimitsPolicyRequest represents the request to create a usage limits policy
 type CreateUsageLimitsPolicyRequest struct {
-	Name           string            `json:"name,omitempty"`
-	WorkspaceID    string            `json:"workspace_id,omitempty"`
-	OrganisationID string            `json:"organisation_id,omitempty"`
-	Conditions     []PolicyCondition `json:"conditions"`
-	GroupBy        []PolicyGroupBy   `json:"group_by"`
-	Type           string            `json:"type"`
-	CreditLimit    float64           `json:"credit_limit"`
-	AlertThreshold *float64          `json:"alert_threshold,omitempty"`
-	PeriodicReset  string            `json:"periodic_reset,omitempty"`
+	Name              string            `json:"name,omitempty"`
+	WorkspaceID       string            `json:"workspace_id,omitempty"`
+	OrganisationID    string            `json:"organisation_id,omitempty"`
+	Conditions        []PolicyCondition `json:"conditions"`
+	GroupBy           []PolicyGroupBy   `json:"group_by"`
+	Type              string            `json:"type"`
+	CreditLimit       float64           `json:"credit_limit"`
+	AlertThreshold    *float64          `json:"alert_threshold,omitempty"`
+	PeriodicReset     string            `json:"periodic_reset,omitempty"`
+	PeriodicResetDays *int              `json:"periodic_reset_days,omitempty"`
 }
 
 // UpdateUsageLimitsPolicyRequest represents the request to update a usage limits policy

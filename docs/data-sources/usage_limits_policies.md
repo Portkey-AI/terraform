@@ -35,7 +35,9 @@ Read-Only:
 - `group_by` (String) JSON array of group by fields.
 - `id` (String) Policy identifier (UUID).
 - `name` (String) Human-readable name for the policy.
+- `next_usage_reset_at` (String) ISO8601 datetime for the next scheduled usage reset.
 - `periodic_reset` (String) Reset period.
+- `periodic_reset_days` (Number) Custom reset interval in days (1–365).
 - `status` (String) Status of the policy (active, archived).
 - `type` (String) Policy type: 'cost' or 'tokens'.
 - `updated_at` (String) Timestamp when the policy was last updated.

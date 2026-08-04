@@ -27,11 +27,13 @@ Manages a Portkey usage limits policy. Controls total usage (cost or tokens) ove
 
 - `alert_threshold` (Number) Threshold at which to send alerts. Must be less than credit_limit.
 - `name` (String) Human-readable name for the policy.
-- `periodic_reset` (String) Reset period: 'monthly' or 'weekly'. If not provided, limit is cumulative.
+- `periodic_reset` (String) Reset period: 'monthly' or 'weekly'. Mutually exclusive with periodic_reset_days. If neither is provided, the limit is cumulative.
+- `periodic_reset_days` (Number) Custom reset interval in days (1–365). Mutually exclusive with periodic_reset.
 
 ### Read-Only
 
 - `created_at` (String) Timestamp when the policy was created.
 - `id` (String) Policy identifier (UUID).
+- `next_usage_reset_at` (String) ISO8601 datetime for the next scheduled usage reset. Computed by the API when periodic_reset or periodic_reset_days is set.
 - `status` (String) Status of the policy (active, archived).
 - `updated_at` (String) Timestamp when the policy was last updated.

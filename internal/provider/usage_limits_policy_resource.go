@@ -6,20 +6,25 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_ resource.Resource                = &usageLimitsPolicyResource{}
-	_ resource.ResourceWithConfigure   = &usageLimitsPolicyResource{}
-	_ resource.ResourceWithImportState = &usageLimitsPolicyResource{}
+	_ resource.Resource                   = &usageLimitsPolicyResource{}
+	_ resource.ResourceWithConfigure      = &usageLimitsPolicyResource{}
+	_ resource.ResourceWithImportState    = &usageLimitsPolicyResource{}
+	_ resource.ResourceWithValidateConfig = &usageLimitsPolicyResource{}
 )
 
 // NewUsageLimitsPolicyResource is a helper function to simplify the provider implementation.
@@ -34,18 +39,20 @@ type usageLimitsPolicyResource struct {
 
 // usageLimitsPolicyResourceModel maps the resource schema data.
 type usageLimitsPolicyResourceModel struct {
-	ID             types.String         `tfsdk:"id"`
-	Name           types.String         `tfsdk:"name"`
-	WorkspaceID    types.String         `tfsdk:"workspace_id"`
-	Conditions     jsontypes.Normalized `tfsdk:"conditions"`
-	GroupBy        jsontypes.Normalized `tfsdk:"group_by"`
-	Type           types.String         `tfsdk:"type"`
-	CreditLimit    types.Float64        `tfsdk:"credit_limit"`
-	AlertThreshold types.Float64        `tfsdk:"alert_threshold"`
-	PeriodicReset  types.String         `tfsdk:"periodic_reset"`
-	Status         types.String         `tfsdk:"status"`
-	CreatedAt      types.String         `tfsdk:"created_at"`
-	UpdatedAt      types.String         `tfsdk:"updated_at"`
+	ID                types.String         `tfsdk:"id"`
+	Name              types.String         `tfsdk:"name"`
+	WorkspaceID       types.String         `tfsdk:"workspace_id"`
+	Conditions        jsontypes.Normalized `tfsdk:"conditions"`
+	GroupBy           jsontypes.Normalized `tfsdk:"group_by"`
+	Type              types.String         `tfsdk:"type"`
+	CreditLimit       types.Float64        `tfsdk:"credit_limit"`
+	AlertThreshold    types.Float64        `tfsdk:"alert_threshold"`
+	PeriodicReset     types.String         `tfsdk:"periodic_reset"`
+	PeriodicResetDays types.Int64          `tfsdk:"periodic_reset_days"`
+	NextUsageResetAt  types.String         `tfsdk:"next_usage_reset_at"`
+	Status            types.String         `tfsdk:"status"`
+	CreatedAt         types.String         `tfsdk:"created_at"`
+	UpdatedAt         types.String         `tfsdk:"updated_at"`
 }
 
 // Metadata returns the resource type name.
@@ -108,11 +115,28 @@ func (r *usageLimitsPolicyResource) Schema(_ context.Context, _ resource.SchemaR
 				Optional:    true,
 			},
 			"periodic_reset": schema.StringAttribute{
-				Description: "Reset period: 'monthly' or 'weekly'. If not provided, limit is cumulative.",
+				Description: "Reset period: 'monthly' or 'weekly'. Mutually exclusive with periodic_reset_days. If neither is provided, the limit is cumulative.",
 				Optional:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("monthly", "weekly"),
+				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
+			},
+			"periodic_reset_days": schema.Int64Attribute{
+				Description: "Custom reset interval in days (1–365). Mutually exclusive with periodic_reset.",
+				Optional:    true,
+				Validators: []validator.Int64{
+					int64validator.Between(1, 365),
+				},
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
+				},
+			},
+			"next_usage_reset_at": schema.StringAttribute{
+				Description: "ISO8601 datetime for the next scheduled usage reset. Computed by the API when periodic_reset or periodic_reset_days is set.",
+				Computed:    true,
 			},
 			"status": schema.StringAttribute{
 				Description: "Status of the policy (active, archived).",
@@ -148,6 +172,26 @@ func (r *usageLimitsPolicyResource) Configure(_ context.Context, req resource.Co
 	}
 
 	r.client = client
+}
+
+// ValidateConfig validates the resource configuration.
+func (r *usageLimitsPolicyResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var config usageLimitsPolicyResourceModel
+	diags := req.Config.Get(ctx, &config)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	periodicResetSet := !config.PeriodicReset.IsNull() && !config.PeriodicReset.IsUnknown()
+	periodicResetDaysSet := !config.PeriodicResetDays.IsNull() && !config.PeriodicResetDays.IsUnknown()
+	if periodicResetSet && periodicResetDaysSet {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("periodic_reset_days"),
+			"Conflicting Attributes",
+			"periodic_reset and periodic_reset_days are mutually exclusive. Set one or the other, not both.",
+		)
+	}
 }
 
 // Create creates the resource and sets the initial Terraform state.
@@ -197,6 +241,11 @@ func (r *usageLimitsPolicyResource) Create(ctx context.Context, req resource.Cre
 
 	if !plan.PeriodicReset.IsNull() && !plan.PeriodicReset.IsUnknown() {
 		createReq.PeriodicReset = plan.PeriodicReset.ValueString()
+	}
+
+	if !plan.PeriodicResetDays.IsNull() && !plan.PeriodicResetDays.IsUnknown() {
+		v := int(plan.PeriodicResetDays.ValueInt64())
+		createReq.PeriodicResetDays = &v
 	}
 
 	createResp, err := r.client.CreateUsageLimitsPolicy(ctx, createReq)
@@ -378,6 +427,21 @@ func (r *usageLimitsPolicyResource) mapPolicyToState(state *usageLimitsPolicyRes
 		} else {
 			state.PeriodicReset = types.StringNull()
 		}
+	}
+
+	// Preserve periodic_reset_days from state to avoid triggering RequiresReplace unnecessarily
+	if !preserveRequiresReplace || state.PeriodicResetDays.IsNull() || state.PeriodicResetDays.IsUnknown() {
+		if policy.PeriodicResetDays != nil {
+			state.PeriodicResetDays = types.Int64Value(int64(*policy.PeriodicResetDays))
+		} else {
+			state.PeriodicResetDays = types.Int64Null()
+		}
+	}
+
+	if policy.NextUsageResetAt != "" {
+		state.NextUsageResetAt = types.StringValue(policy.NextUsageResetAt)
+	} else {
+		state.NextUsageResetAt = types.StringNull()
 	}
 
 	if !preserveRequiresReplace || state.Conditions.IsNull() || state.Conditions.IsUnknown() {
