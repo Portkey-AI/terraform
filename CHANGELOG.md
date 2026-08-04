@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Departed-user 403s no longer wedge `plan`/`apply`** - `portkey_api_key` and `portkey_workspace_member` Read now treat 403/404 responses as missing-resource via the shared `client.IsNotFound` helper, matching `portkey_workspace` and `portkey_workspace_defaults`. When a user is removed from the organisation, the Admin API returns `403 AB03` (not 404) for reads of that user's workspace API keys and memberships; `portkey_api_key` only removed state on a literal `"404"` string match and `portkey_workspace_member` had no not-found handling at all, so a single departed user permanently broke `plan`/`apply` for any state containing their resources until every affected address was manually `terraform state rm`'d. This was especially painful for `for_each` over `data.portkey_users`. Replacing the string match also removes a false-positive path where any error body merely containing `"404"` (e.g. a request ID) was treated as not-found.
+
 ## [0.2.30] - 2026-08-04
 
 ### Added
