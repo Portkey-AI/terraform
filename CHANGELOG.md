@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.30] - 2026-08-04
+
+### Added
+- **Custom usage-limit reset intervals** — `portkey_usage_limits_policy` now supports `periodic_reset_days` (1–365) for reset cadences the fixed `periodic_reset` enum can't express, and exposes the API-computed `next_usage_reset_at` timestamp. `periodic_reset` and `periodic_reset_days` are mutually exclusive; the provider now rejects the combination at plan time rather than surfacing the API's `AB01 "Cannot set both periodic_reset and periodic_reset_days"` at apply time. Both new attributes are also exposed on the `portkey_usage_limits_policy` and `portkey_usage_limits_policies` data sources. Changing `periodic_reset_days` forces replacement, matching the existing `periodic_reset` behavior.
+- **`excludes` in policy conditions** — conditions on `portkey_usage_limits_policy` and `portkey_rate_limits_policy` now accept an optional `excludes` key (string or array of strings) alongside `key`/`value`, so a policy can target a broad set while carving out exceptions (e.g. all `gpt-4*` models except the `-mini` variants).
+
+### Changed
+- **`periodic_reset` is now validated against allowed values** — `portkey_usage_limits_policy` rejects anything other than `monthly` or `weekly` at plan time. The Portkey API already returned `400` for other values, so this converts an apply-time failure into a plan-time one; no previously-working configuration is affected.
+- **Policy `conditions` / `group_by` use `jsontypes.Normalized`** — these attributes are now semantically compared as JSON rather than as raw strings, so key ordering and whitespace differences between the config and the API response no longer surface as permanent plan diffs.
+
 ## [0.2.29] - 2026-07-07
 
 ### Added
@@ -333,7 +343,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace deletion may be blocked by existing resources
 - Prompt template updates create new versions (use makeDefault to promote)
 
-[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.29...HEAD
+[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.30...HEAD
+[0.2.30]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.29...v0.2.30
 [0.2.29]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.28...v0.2.29
 [0.2.28]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.27...v0.2.28
 [0.2.27]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.26...v0.2.27
