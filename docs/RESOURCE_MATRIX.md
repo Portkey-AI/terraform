@@ -32,7 +32,7 @@
 | `portkey_prompt` | ✅ | ✅ | ⚠️ | ✅ | ✅ | Template updates need versions | ✅ Passing |
 | `portkey_prompt_partial` | ✅ | ✅ | ⚠️ | ✅ | ✅ | Content updates need versions | ✅ Passing |
 | `portkey_prompt_collection` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
-| `portkey_guardrail` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working. `workspace_id` is optional: omit it for an organisation-scoped guardrail (needed by `portkey_organisation_defaults`). Updating an org-scoped guardrail needs broader key permissions than creating one — an org admin key that can create/read/delete still gets `403 AB03` on PUT | ✅ Passing; the org-scoped update step is env-gated behind `PORTKEY_TEST_ORG_GUARDRAIL_UPDATE` |
+| `portkey_guardrail` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working. `workspace_id` is optional: omit it for an organisation-scoped guardrail (needed by `portkey_organisation_defaults`). Org-scoped operations need the `organisation_guardrails.*` scopes, which are separate from the workspace-scoped `guardrails.*` family | ✅ Passing; `TestAccGuardrailResource_organisationScoped` is env-gated behind `PORTKEY_TEST_ORG_GUARDRAILS` |
 | `portkey_usage_limits_policy` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
 | `portkey_rate_limits_policy` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
 | `portkey_mcp_integration` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD | ✅ Passing |
@@ -248,7 +248,9 @@ DELETE /guardrails/{slugOrId}      → Delete
 ```
 
 **Guardrail Scope:**
-Scope is decided purely by whether `workspace_id` is in the create body — include it for a workspace-scoped guardrail, omit it for an organisation-scoped one. The organisation always comes from the authenticated API key, so `organisation_id` in the request body is inert (the controller never reads it). Read/Update/Delete resolve scope from the guardrail record itself, so they need no scope parameter. Organisation-scoped guardrails are the only ones accepted by `portkey_organisation_defaults`, and creating them requires the `organisation_guardrails` permission on the Admin API key.
+Scope is decided purely by whether `workspace_id` is in the create body — include it for a workspace-scoped guardrail, omit it for an organisation-scoped one. The organisation always comes from the authenticated API key, so `organisation_id` in the request body is inert (the controller never reads it). Read/Update/Delete resolve scope from the guardrail record itself, so they need no scope parameter. Organisation-scoped guardrails are the only ones accepted by `portkey_organisation_defaults`.
+
+Permissions follow the guardrail's scope and are granted per verb: organisation-scoped operations need `organisation_guardrails.create` / `.read` / `.update` / `.delete` / `.list`, workspace-scoped ones the parallel `guardrails.*` family. The two families are independent, so a key that manages workspace guardrails may hold none of the organisation ones. A missing scope returns `403 AB03`.
 
 **Guardrail Checks:**
 Checks define what to validate. Each check has an `id` and optional `parameters`:

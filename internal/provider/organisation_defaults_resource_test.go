@@ -30,13 +30,27 @@ func testAccPreCheckOrganisationDefaults(t *testing.T) {
 	testAccPreCheck(t)
 }
 
+// testAccPreCheckOrganisationDefaultsWithGuardrails gates the tests that both
+// overwrite the organisation's defaults and create the organisation-scoped
+// guardrails they attach.
+//
+// The two variables guard different risks and both apply to those tests:
+// PORTKEY_TEST_ORG_DEFAULTS is about blast radius (shared organisation state),
+// PORTKEY_TEST_ORG_GUARDRAILS is about key permissions. A key holding
+// organisation_settings but no organisation_guardrails scopes would otherwise
+// fail on guardrail creation instead of skipping.
+func testAccPreCheckOrganisationDefaultsWithGuardrails(t *testing.T) {
+	testAccPreCheckOrganisationDefaults(t)
+	testAccPreCheckOrganisationGuardrails(t)
+}
+
 // TestAccOrganisationDefaultsResource_lifecycle exercises organisation-scoped
 // guardrails → organisation_defaults.
 func TestAccOrganisationDefaultsResource_lifecycle(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-orgdef")
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheckOrganisationDefaults(t) },
+		PreCheck:                 func() { testAccPreCheckOrganisationDefaultsWithGuardrails(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Step 1: create org-scoped guardrails and attach both lists.
@@ -88,7 +102,7 @@ func TestAccOrganisationDefaultsResource_adoptsOmittedList(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-orgdef-adopt")
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheckOrganisationDefaults(t) },
+		PreCheck:                 func() { testAccPreCheckOrganisationDefaultsWithGuardrails(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Step 1: create the guardrails only, so they exist in the
@@ -141,7 +155,7 @@ func TestAccOrganisationDefaultsResource_omittingExplicitEmptyList(t *testing.T)
 	rName := acctest.RandomWithPrefix("tf-acc-orgdef-empty")
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheckOrganisationDefaults(t) },
+		PreCheck:                 func() { testAccPreCheckOrganisationDefaultsWithGuardrails(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Step 1: output_guardrails explicitly [], input populated.

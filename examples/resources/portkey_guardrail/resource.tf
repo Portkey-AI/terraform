@@ -41,5 +41,6 @@ resource "portkey_guardrail" "organisation_scoped" {
 
 # Scope is immutable: adding or removing workspace_id replaces the guardrail.
 #
-# Creating organisation-scoped guardrails requires the Admin API key to hold the
-# organisation_guardrails permission.
+# Organisation-scoped guardrails need the organisation_guardrails.create /
+# .read / .update / .delete scopes on the Admin API key, which are separate from
+# the workspace-scoped guardrails.* family.

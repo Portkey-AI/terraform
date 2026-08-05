@@ -3,6 +3,7 @@ package provider
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -162,6 +163,23 @@ func TestAccGuardrailResource_multipleChecks(t *testing.T) {
 	})
 }
 
+// testAccPreCheckOrganisationGuardrails gates tests that create
+// organisation-scoped guardrails.
+//
+// Portkey scopes guardrail access per verb, and organisation-level guardrails
+// use their own `organisation_guardrails.*` family rather than the
+// `guardrails.*` one every workspace-scoped test in this file relies on. An org
+// admin key that passes all of those can still lack `organisation_guardrails`
+// scopes entirely and get `403 AB03 You do not have enough permissions to
+// execute this request`. Without this opt-in the weekly acceptance-test workflow
+// would go red on a key permission gap rather than a provider defect.
+func testAccPreCheckOrganisationGuardrails(t *testing.T) {
+	if os.Getenv("PORTKEY_TEST_ORG_GUARDRAILS") == "" {
+		t.Skip("PORTKEY_TEST_ORG_GUARDRAILS must be set to run tests that create organisation-scoped guardrails; the key needs organisation_guardrails.create, .read, .update and .delete")
+	}
+	testAccPreCheck(t)
+}
+
 // TestAccGuardrailResource_organisationScoped tests the full CRUD lifecycle of
 // an organisation-scoped guardrail, created by omitting workspace_id. The API
 // derives the organisation from the Admin API key, and workspace_id must stay
@@ -170,7 +188,7 @@ func TestAccGuardrailResource_organisationScoped(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-orgguard")
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
+		PreCheck:                 func() { testAccPreCheckOrganisationGuardrails(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Create and Read
@@ -196,24 +214,15 @@ func TestAccGuardrailResource_organisationScoped(t *testing.T) {
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
 			},
-			// Update in place (checks change), still org-scoped.
-			//
-			// Gated: updating an organisation-scoped guardrail needs broader
-			// permissions than creating, reading or deleting one. An org admin
-			// key that passes every other step here still gets
-			// `403 AB03 You do not have enough permissions to execute this
-			// request` on PUT /guardrails/{id}, while the same key updates a
-			// workspace-scoped guardrail fine. Leaving this ungated turns the
-			// weekly acc-tests workflow red on a permission gap rather than a
-			// provider defect.
+			// Update in place (checks change), still org-scoped. Needs
+			// `organisation_guardrails.update`.
 			{
-				SkipFunc: func() (bool, error) {
-					return os.Getenv("PORTKEY_TEST_ORG_GUARDRAIL_UPDATE") == "", nil
-				},
 				Config: testAccGuardrailResourceConfigOrgScoped(rName, 2000),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
 					resource.TestCheckNoResourceAttr("portkey_guardrail.test", "workspace_id"),
+					// Confirm the PUT actually landed rather than just returning 200.
+					resource.TestMatchResourceAttr("portkey_guardrail.test", "checks", regexp.MustCompile(`"maxWords":\s*2000`)),
 				),
 			},
 			// Delete happens automatically in TestCase.
