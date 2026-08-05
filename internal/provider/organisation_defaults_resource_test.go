@@ -194,13 +194,14 @@ resource "portkey_organisation_defaults" "test" {}
 // guardrail is used as an organisation default.
 func TestAccOrganisationDefaultsResource_rejectsWorkspaceGuardrail(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-orgdef-ws")
+	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config:      testAccOrganisationDefaultsConfigWorkspaceScoped(rName),
+				Config:      testAccOrganisationDefaultsConfigWorkspaceScoped(rName, workspaceID),
 				ExpectError: regexp.MustCompile(`(?is)workspace-scoped guardrails`),
 			},
 		},
@@ -281,18 +282,19 @@ resource "portkey_organisation_defaults" "test" {
 `
 }
 
-func testAccOrganisationDefaultsConfigWorkspaceScoped(name string) string {
+// testAccOrganisationDefaultsConfigWorkspaceScoped uses the shared test
+// workspace rather than creating a throwaway one. The workspace here is
+// incidental — all the test needs is *a* workspace-scoped guardrail — and
+// creating one would leave it dangling, since workspace delete is blocked by
+// the backend (`AB07 Unable to delete. Please ensure that all Providers are
+// deleted`).
+func testAccOrganisationDefaultsConfigWorkspaceScoped(name, workspaceID string) string {
 	return fmt.Sprintf(`
 provider "portkey" {}
 
-resource "portkey_workspace" "test" {
-  name        = %[1]q
-  description = "organisation_defaults scope-rejection test"
-}
-
 resource "portkey_guardrail" "workspace_scoped" {
   name         = "%[1]s-ws"
-  workspace_id = portkey_workspace.test.id
+  workspace_id = %[2]q
   checks = jsonencode([{
     id = "default.wordCount"
     parameters = {
@@ -309,5 +311,5 @@ resource "portkey_guardrail" "workspace_scoped" {
 resource "portkey_organisation_defaults" "test" {
   input_guardrails = [portkey_guardrail.workspace_scoped.slug]
 }
-`, name)
+`, name, workspaceID)
 }

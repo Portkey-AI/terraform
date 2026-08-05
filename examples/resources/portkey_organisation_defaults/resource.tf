@@ -29,10 +29,10 @@ resource "portkey_organisation_defaults" "this" {
 # Setting input_guardrails = [] or output_guardrails = [] ALWAYS clears them on
 # the next apply.
 #
-# Omitting an attribute behaves differently depending on the phase:
-#   - On create it is not sent to the API, so any guardrails already set on the
-#     organisation (e.g. attached via the Portkey UI) are PRESERVED, not cleared.
-#     Set the attribute to [] if you want to clear on create.
-#   - On update, removing an attribute you previously managed clears it.
+# Omitting an attribute means Terraform does not manage that list. It is never
+# sent to the API, so guardrails already set on the organisation (e.g. attached
+# via the Portkey UI) are PRESERVED and adopted into state. This holds uniformly
+# on create and on update: removing an attribute you previously managed leaves
+# those guardrails in place. Set the attribute to [] to clear it.
 #
 # Destroying this resource clears both lists via the update endpoint.

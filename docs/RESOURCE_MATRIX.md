@@ -32,7 +32,7 @@
 | `portkey_prompt` | ✅ | ✅ | ⚠️ | ✅ | ✅ | Template updates need versions | ✅ Passing |
 | `portkey_prompt_partial` | ✅ | ✅ | ⚠️ | ✅ | ✅ | Content updates need versions | ✅ Passing |
 | `portkey_prompt_collection` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
-| `portkey_guardrail` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working. `workspace_id` is optional: omit it for an organisation-scoped guardrail (needed by `portkey_organisation_defaults`) | ✅ Passing |
+| `portkey_guardrail` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working. `workspace_id` is optional: omit it for an organisation-scoped guardrail (needed by `portkey_organisation_defaults`). Updating an org-scoped guardrail needs broader key permissions than creating one — an org admin key that can create/read/delete still gets `403 AB03` on PUT | ✅ Passing; the org-scoped update step is env-gated behind `PORTKEY_TEST_ORG_GUARDRAIL_UPDATE` |
 | `portkey_usage_limits_policy` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
 | `portkey_rate_limits_policy` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
 | `portkey_mcp_integration` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD | ✅ Passing |
