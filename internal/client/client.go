@@ -1922,10 +1922,83 @@ func (c *Client) UpdateOrganisationDefaults(ctx context.Context, req UpdateOrgan
 	return c.GetOrganisationDefaults(ctx)
 }
 
-// PolicyCondition represents a condition in a policy
+// OrganisationGuardrailRef is a guardrail reference as returned by
+// GET /v2/admin/organisation/defaults. Unlike workspace defaults, which
+// return plain string arrays, the organisation endpoint enriches each
+// entry with both the guardrail UUID and its slug.
+type OrganisationGuardrailRef struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+}
+
+// OrganisationDefaults represents the organisation-level default guardrails
+// returned by GET /v2/admin/organisation/defaults. The organisation is
+// derived from the Admin API key used for the request, so there is no
+// organisation identifier in the request or the response.
+type OrganisationDefaults struct {
+	Object           string                     `json:"object,omitempty"`
+	InputGuardrails  []OrganisationGuardrailRef `json:"input_guardrails"`
+	OutputGuardrails []OrganisationGuardrailRef `json:"output_guardrails"`
+}
+
+// UpdateOrganisationDefaultsRequest is the write-side of organisation
+// defaults. Input/OutputGuardrails use json.RawMessage so callers can
+// distinguish three states, matching UpdateWorkspaceDefaults:
+//   - nil:             field omitted → preserve existing guardrails
+//   - marshaled `[]`:  clears all guardrails
+//   - marshaled array: replaces guardrails with the given IDs/slugs
+//
+// The API requires at least one of the two fields to be present, so
+// callers must not send a request with both set to nil.
+type UpdateOrganisationDefaultsRequest struct {
+	InputGuardrails  json.RawMessage `json:"input_guardrails,omitempty"`
+	OutputGuardrails json.RawMessage `json:"output_guardrails,omitempty"`
+}
+
+// organisationDefaultsURL returns the absolute URL for the organisation
+// defaults endpoints. These live under /v2 while the rest of the Admin API
+// used by this provider lives under /v1, and the configured BaseURL is
+// expected to end with /v1 (the provider default and most self-hosted
+// setups), so the version suffix is swapped rather than appended.
+func (c *Client) organisationDefaultsURL() string {
+	base := strings.TrimSuffix(strings.TrimSuffix(c.BaseURL, "/"), "/v1")
+	return strings.TrimSuffix(base, "/") + "/v2/admin/organisation/defaults"
+}
+
+// GetOrganisationDefaults retrieves the organisation-level default
+// guardrails for the organisation owning the configured Admin API key.
+func (c *Client) GetOrganisationDefaults(ctx context.Context) (*OrganisationDefaults, error) {
+	respBody, err := c.doRequest(ctx, http.MethodGet, c.organisationDefaultsURL(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var defaults OrganisationDefaults
+	if err := json.Unmarshal(respBody, &defaults); err != nil {
+		return nil, fmt.Errorf("error unmarshaling response: %w", err)
+	}
+
+	return &defaults, nil
+}
+
+// UpdateOrganisationDefaults updates the organisation-level default
+// guardrails. The API returns an empty object on success, so the current
+// state is re-fetched and returned.
+func (c *Client) UpdateOrganisationDefaults(ctx context.Context, req UpdateOrganisationDefaultsRequest) (*OrganisationDefaults, error) {
+	if _, err := c.doRequest(ctx, http.MethodPut, c.organisationDefaultsURL(), req); err != nil {
+		return nil, err
+	}
+
+	return c.GetOrganisationDefaults(ctx)
+}
+
+// PolicyCondition represents a condition in a policy.
+// Value and Excludes use json.RawMessage because the API accepts both
+// a single string (e.g. "key1") and an array of strings (e.g. ["key1","key2"]).
 type PolicyCondition struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	Key      string          `json:"key"`
+	Value    json.RawMessage `json:"value"`
+	Excludes json.RawMessage `json:"excludes,omitempty"`
 }
 
 // PolicyGroupBy represents a group by field in a policy
@@ -1935,32 +2008,35 @@ type PolicyGroupBy struct {
 
 // UsageLimitsPolicy represents a Portkey usage limits policy
 type UsageLimitsPolicy struct {
-	ID             string            `json:"id"`
-	Name           string            `json:"name,omitempty"`
-	Conditions     []PolicyCondition `json:"conditions"`
-	GroupBy        []PolicyGroupBy   `json:"group_by"`
-	Type           string            `json:"type"`
-	CreditLimit    float64           `json:"credit_limit"`
-	AlertThreshold *float64          `json:"alert_threshold,omitempty"`
-	PeriodicReset  string            `json:"periodic_reset,omitempty"`
-	Status         string            `json:"status"`
-	WorkspaceID    string            `json:"workspace_id"`
-	OrganisationID string            `json:"organisation_id"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"last_updated_at"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name,omitempty"`
+	Conditions        []PolicyCondition `json:"conditions"`
+	GroupBy           []PolicyGroupBy   `json:"group_by"`
+	Type              string            `json:"type"`
+	CreditLimit       float64           `json:"credit_limit"`
+	AlertThreshold    *float64          `json:"alert_threshold,omitempty"`
+	PeriodicReset     string            `json:"periodic_reset,omitempty"`
+	PeriodicResetDays *int              `json:"periodic_reset_days,omitempty"`
+	NextUsageResetAt  string            `json:"next_usage_reset_at,omitempty"`
+	Status            string            `json:"status"`
+	WorkspaceID       string            `json:"workspace_id"`
+	OrganisationID    string            `json:"organisation_id"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"last_updated_at"`
 }
 
 // CreateUsageLimitsPolicyRequest represents the request to create a usage limits policy
 type CreateUsageLimitsPolicyRequest struct {
-	Name           string            `json:"name,omitempty"`
-	WorkspaceID    string            `json:"workspace_id,omitempty"`
-	OrganisationID string            `json:"organisation_id,omitempty"`
-	Conditions     []PolicyCondition `json:"conditions"`
-	GroupBy        []PolicyGroupBy   `json:"group_by"`
-	Type           string            `json:"type"`
-	CreditLimit    float64           `json:"credit_limit"`
-	AlertThreshold *float64          `json:"alert_threshold,omitempty"`
-	PeriodicReset  string            `json:"periodic_reset,omitempty"`
+	Name              string            `json:"name,omitempty"`
+	WorkspaceID       string            `json:"workspace_id,omitempty"`
+	OrganisationID    string            `json:"organisation_id,omitempty"`
+	Conditions        []PolicyCondition `json:"conditions"`
+	GroupBy           []PolicyGroupBy   `json:"group_by"`
+	Type              string            `json:"type"`
+	CreditLimit       float64           `json:"credit_limit"`
+	AlertThreshold    *float64          `json:"alert_threshold,omitempty"`
+	PeriodicReset     string            `json:"periodic_reset,omitempty"`
+	PeriodicResetDays *int              `json:"periodic_reset_days,omitempty"`
 }
 
 // UpdateUsageLimitsPolicyRequest represents the request to update a usage limits policy
