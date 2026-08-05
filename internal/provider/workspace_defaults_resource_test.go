@@ -159,6 +159,58 @@ func TestAccWorkspaceDefaultsResource_adoptsOmittedList(t *testing.T) {
 	})
 }
 
+// TestAccWorkspaceDefaultsResource_omittingExplicitEmptyList covers dropping an
+// attribute that was previously set to an explicit [].
+//
+// Regression test. coalesceListForConfig returned the API list verbatim for an
+// omitted attribute, and the API reports an empty list as null. Once the
+// attributes became Optional+Computed with UseStateForUnknown, an omitted
+// attribute plans to the prior state — [] here — so the apply failed with
+// "Provider produced inconsistent result after apply: .output_guardrails: was
+// cty.ListValEmpty(cty.String), but now null". Read already treated null and []
+// as equivalent; the apply path now does too.
+//
+// Unlike the other tests in this file this one runs against the shared test
+// workspace instead of a throwaway. Workspace delete is blocked by the backend
+// (`AB07 Unable to delete. Please ensure that all Providers are deleted`), so
+// creating one would leave a dangling workspace and a permanently failing test
+// in the weekly workflow. Only the guardrails, which are deletable, are created
+// here — and the resource under test only ever holds empty guardrail lists, so
+// it leaves the shared workspace's defaults exactly as it found them.
+func TestAccWorkspaceDefaultsResource_omittingExplicitEmptyList(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-wsdef-empty")
+	workspaceID := getTestWorkspaceID()
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Step 1: output_guardrails explicitly [], input populated.
+			{
+				Config: testAccWorkspaceDefaultsConfigExplicitEmptyOutput(rName, workspaceID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_workspace_defaults.test", "input_guardrails.#", "1"),
+					resource.TestCheckResourceAttr("portkey_workspace_defaults.test", "output_guardrails.#", "0"),
+				),
+			},
+			// Step 2: drop output_guardrails entirely and change input. The
+			// omitted attribute must stay [] rather than flipping to null.
+			{
+				Config: testAccWorkspaceDefaultsConfigOmittedAfterEmpty(rName, workspaceID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_workspace_defaults.test", "input_guardrails.#", "0"),
+					resource.TestCheckResourceAttr("portkey_workspace_defaults.test", "output_guardrails.#", "0"),
+				),
+			},
+			// Step 3: the omitted attribute must be stable across replans.
+			{
+				Config:   testAccWorkspaceDefaultsConfigOmittedAfterEmpty(rName, workspaceID),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
 // testAccAttachWorkspaceOutputGuardrail attaches an existing guardrail to the
 // workspace's output defaults without going through Terraform, simulating a
 // guardrail attached through the Portkey UI.
@@ -246,6 +298,55 @@ resource "portkey_workspace_defaults" "test" {
   depends_on = [portkey_guardrail.output]
 }
 `
+}
+
+// testAccWorkspaceDefaultsSharedBase declares a single workspace-scoped
+// guardrail in the shared test workspace, avoiding the undeletable throwaway
+// workspace the other configs in this file create.
+func testAccWorkspaceDefaultsSharedBase(name, workspaceID string) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_guardrail" "input" {
+  name         = "%[1]s-in"
+  workspace_id = %[2]q
+  checks = jsonencode([{
+    id = "default.wordCount"
+    parameters = {
+      minWords = 1
+      maxWords = 1000
+    }
+  }])
+  actions = jsonencode({
+    onFail  = "log"
+    message = "input check"
+  })
+}
+`, name, workspaceID)
+}
+
+// testAccWorkspaceDefaultsConfigExplicitEmptyOutput sets output_guardrails to
+// an explicit [] so it lands in state as an empty list rather than null.
+func testAccWorkspaceDefaultsConfigExplicitEmptyOutput(name, workspaceID string) string {
+	return testAccWorkspaceDefaultsSharedBase(name, workspaceID) + fmt.Sprintf(`
+resource "portkey_workspace_defaults" "test" {
+  workspace_id      = %[1]q
+  input_guardrails  = [portkey_guardrail.input.slug]
+  output_guardrails = []
+}
+`, workspaceID)
+}
+
+// testAccWorkspaceDefaultsConfigOmittedAfterEmpty drops output_guardrails
+// entirely and clears input_guardrails, so the plan carries the prior []
+// forward for the omitted attribute.
+func testAccWorkspaceDefaultsConfigOmittedAfterEmpty(name, workspaceID string) string {
+	return testAccWorkspaceDefaultsSharedBase(name, workspaceID) + fmt.Sprintf(`
+resource "portkey_workspace_defaults" "test" {
+  workspace_id     = %[1]q
+  input_guardrails = []
+}
+`, workspaceID)
 }
 
 func testAccWorkspaceDefaultsConfigCleared(name string) string {

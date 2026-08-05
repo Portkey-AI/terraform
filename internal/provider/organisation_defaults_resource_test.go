@@ -128,6 +128,48 @@ func TestAccOrganisationDefaultsResource_adoptsOmittedList(t *testing.T) {
 	})
 }
 
+// TestAccOrganisationDefaultsResource_omittingExplicitEmptyList mirrors
+// TestAccWorkspaceDefaultsResource_omittingExplicitEmptyList for organisation
+// scope: drop an attribute that was previously set to an explicit [].
+//
+// Regression test. Both resources share coalesceListForConfig, which returned
+// the API list verbatim for an omitted attribute while the API reports an empty
+// list as null. Since the attributes became Optional+Computed with
+// UseStateForUnknown, an omitted attribute plans to the prior state — [] here —
+// so the apply failed with "Provider produced inconsistent result after apply".
+func TestAccOrganisationDefaultsResource_omittingExplicitEmptyList(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-orgdef-empty")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheckOrganisationDefaults(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Step 1: output_guardrails explicitly [], input populated.
+			{
+				Config: testAccOrganisationDefaultsConfigExplicitEmptyOutput(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_organisation_defaults.test", "input_guardrails.#", "1"),
+					resource.TestCheckResourceAttr("portkey_organisation_defaults.test", "output_guardrails.#", "0"),
+				),
+			},
+			// Step 2: drop output_guardrails entirely and clear input. Setting
+			// input to [] keeps the AtLeastOneOf validator satisfied.
+			{
+				Config: testAccOrganisationDefaultsConfigOmittedAfterEmpty(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_organisation_defaults.test", "input_guardrails.#", "0"),
+					resource.TestCheckResourceAttr("portkey_organisation_defaults.test", "output_guardrails.#", "0"),
+				),
+			},
+			// Step 3: the omitted attribute must be stable across replans.
+			{
+				Config:   testAccOrganisationDefaultsConfigOmittedAfterEmpty(rName),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
 // testAccAttachOrganisationOutputGuardrail attaches an existing guardrail to the
 // organisation's output defaults without going through Terraform, simulating a
 // guardrail attached through the Portkey UI.
@@ -192,12 +234,17 @@ resource "portkey_organisation_defaults" "test" {}
 // TestAccOrganisationDefaultsResource_rejectsWorkspaceGuardrail verifies the
 // API-side scope check surfaces as a Terraform error when a workspace-scoped
 // guardrail is used as an organisation default.
+//
+// Gated like the other organisation tests even though it only asserts a
+// rejection: it still issues a mutating PUT /v2/admin/organisation/defaults,
+// and a key without organisation_settings.update gets a 403 AB03 that does not
+// match the expected pattern — failing the test rather than skipping it.
 func TestAccOrganisationDefaultsResource_rejectsWorkspaceGuardrail(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-orgdef-ws")
 	workspaceID := getTestWorkspaceID()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
+		PreCheck:                 func() { testAccPreCheckOrganisationDefaults(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -269,6 +316,28 @@ resource "portkey_organisation_defaults" "test" {
   input_guardrails = [portkey_guardrail.org_input.slug]
 
   depends_on = [portkey_guardrail.org_output]
+}
+`
+}
+
+// testAccOrganisationDefaultsConfigExplicitEmptyOutput sets output_guardrails to
+// an explicit [] so it lands in state as an empty list rather than null.
+func testAccOrganisationDefaultsConfigExplicitEmptyOutput(name string) string {
+	return testAccOrganisationDefaultsGuardrails(name) + `
+resource "portkey_organisation_defaults" "test" {
+  input_guardrails  = [portkey_guardrail.org_input.slug]
+  output_guardrails = []
+}
+`
+}
+
+// testAccOrganisationDefaultsConfigOmittedAfterEmpty drops output_guardrails
+// entirely and clears input_guardrails, so the plan carries the prior []
+// forward for the omitted attribute.
+func testAccOrganisationDefaultsConfigOmittedAfterEmpty(name string) string {
+	return testAccOrganisationDefaultsGuardrails(name) + `
+resource "portkey_organisation_defaults" "test" {
+  input_guardrails = []
 }
 `
 }

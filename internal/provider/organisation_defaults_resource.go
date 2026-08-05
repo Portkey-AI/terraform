@@ -302,9 +302,12 @@ func (r *organisationDefaultsResource) ImportState(ctx context.Context, _ resour
 // API happened to return nothing.
 func applyOrganisationDefaultsFromAPI(plan *organisationDefaultsResourceModel, defaults *client.OrganisationDefaults, inputCfg, outputCfg types.List) diag.Diagnostics {
 	var diags diag.Diagnostics
+	// Capture before the assignments below overwrite them: these are the values
+	// Terraform planned for the attributes, which the applied state must match.
+	plannedIn, plannedOut := plan.InputGuardrails, plan.OutputGuardrails
 	if defaults == nil {
-		plan.InputGuardrails = coalesceListForConfig(inputCfg, types.ListNull(types.StringType))
-		plan.OutputGuardrails = coalesceListForConfig(outputCfg, types.ListNull(types.StringType))
+		plan.InputGuardrails = coalesceListForConfig(inputCfg, types.ListNull(types.StringType), plannedIn)
+		plan.OutputGuardrails = coalesceListForConfig(outputCfg, types.ListNull(types.StringType), plannedOut)
 		return diags
 	}
 	inList, d := organisationGuardrailRefsToList(defaults.InputGuardrails)
@@ -314,7 +317,7 @@ func applyOrganisationDefaultsFromAPI(plan *organisationDefaultsResourceModel, d
 	if diags.HasError() {
 		return diags
 	}
-	plan.InputGuardrails = coalesceListForConfig(inputCfg, inList)
-	plan.OutputGuardrails = coalesceListForConfig(outputCfg, outList)
+	plan.InputGuardrails = coalesceListForConfig(inputCfg, inList, plannedIn)
+	plan.OutputGuardrails = coalesceListForConfig(outputCfg, outList, plannedOut)
 	return diags
 }

@@ -333,9 +333,12 @@ func (r *workspaceDefaultsResource) ImportState(ctx context.Context, req resourc
 // even if the API happened to echo null.
 func applyDefaultsFromAPI(plan *workspaceDefaultsResourceModel, workspace *client.Workspace, inputCfg, outputCfg types.List) diag.Diagnostics {
 	var diags diag.Diagnostics
+	// Capture before the assignments below overwrite them: these are the values
+	// Terraform planned for the attributes, which the applied state must match.
+	plannedIn, plannedOut := plan.InputGuardrails, plan.OutputGuardrails
 	if workspace.Defaults == nil {
-		plan.InputGuardrails = coalesceListForConfig(inputCfg, types.ListNull(types.StringType))
-		plan.OutputGuardrails = coalesceListForConfig(outputCfg, types.ListNull(types.StringType))
+		plan.InputGuardrails = coalesceListForConfig(inputCfg, types.ListNull(types.StringType), plannedIn)
+		plan.OutputGuardrails = coalesceListForConfig(outputCfg, types.ListNull(types.StringType), plannedOut)
 		return diags
 	}
 	inList, d := guardrailsFromAPIToList(workspace.Defaults.InputGuardrails)
@@ -345,8 +348,8 @@ func applyDefaultsFromAPI(plan *workspaceDefaultsResourceModel, workspace *clien
 	if diags.HasError() {
 		return diags
 	}
-	plan.InputGuardrails = coalesceListForConfig(inputCfg, inList)
-	plan.OutputGuardrails = coalesceListForConfig(outputCfg, outList)
+	plan.InputGuardrails = coalesceListForConfig(inputCfg, inList, plannedIn)
+	plan.OutputGuardrails = coalesceListForConfig(outputCfg, outList, plannedOut)
 	return diags
 }
 
@@ -423,13 +426,22 @@ func reconcileListAfterRead(state, apiList types.List) types.List {
 }
 
 // coalesceListForConfig reconciles the user's config with the API response.
-// - config null → mirror API list as-is (including null when API is empty).
-// - config [] → force empty list (user asked to clear; state must match HCL).
-// - config populated, API null (lag) → trust config.
-// - otherwise → trust API list.
-func coalesceListForConfig(cfg, apiList types.List) types.List {
+//   - config null → the attribute is unmanaged. Under Optional+Computed with
+//     UseStateForUnknown Terraform planned the prior state for it, and the
+//     applied value has to match that plan, so preserve the planned value when
+//     it and the API agree the list is empty (null and [] mean the same thing
+//     here, and the API reports both as null). Otherwise adopt the API list so
+//     drift surfaces. `planned` is unknown on create, where there is no prior
+//     state to preserve — returning it would leave an unknown value in state.
+//   - config [] → force empty list (user asked to clear; state must match HCL).
+//   - config populated, API null (lag) → trust config.
+//   - otherwise → trust API list.
+func coalesceListForConfig(cfg, apiList, planned types.List) types.List {
 	if cfg.IsNull() || cfg.IsUnknown() {
-		return apiList
+		if planned.IsUnknown() {
+			return apiList
+		}
+		return reconcileListAfterRead(planned, apiList)
 	}
 	if len(cfg.Elements()) == 0 {
 		return types.ListValueMust(types.StringType, []attr.Value{})

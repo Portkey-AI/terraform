@@ -234,25 +234,45 @@ func TestCoalesceListForConfig(t *testing.T) {
 	populated := types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g-1")})
 	apiPopulated := types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g-2")})
 
+	unknown := types.ListUnknown(types.StringType)
+
 	tests := []struct {
 		name          string
 		cfg           types.List
 		apiList       types.List
+		planned       types.List
 		wantEqual     types.List
 		expectEmpty   bool
 		expectSameAs  string // "cfg" or "api"
 		expectNullOut bool
 	}{
-		{name: "null cfg + null api → null", cfg: nullList, apiList: nullList, expectNullOut: true},
-		{name: "null cfg + populated api → api", cfg: nullList, apiList: apiPopulated, expectSameAs: "api"},
-		{name: "empty cfg → empty (user clear intent)", cfg: empty, apiList: nullList, expectEmpty: true},
-		{name: "populated cfg + null api → cfg (lag fallback)", cfg: populated, apiList: nullList, expectSameAs: "cfg"},
-		{name: "populated cfg + populated api → api", cfg: populated, apiList: apiPopulated, expectSameAs: "api"},
+		// Create: nothing was planned, so the API is the only source.
+		{name: "null cfg + unknown planned + null api → null", cfg: nullList, apiList: nullList, planned: unknown, expectNullOut: true},
+		{name: "null cfg + unknown planned + populated api → api", cfg: nullList, apiList: apiPopulated, planned: unknown, expectSameAs: "api"},
+
+		// Update: the attribute was omitted, so Terraform planned prior state
+		// and the applied value has to match it.
+		//
+		// Regression: an explicit [] that is later omitted must stay [] rather
+		// than flipping to null, which fails the apply with "Provider produced
+		// inconsistent result after apply".
+		{name: "null cfg + planned [] + null api → [] (regression)", cfg: nullList, apiList: nullList, planned: empty, expectEmpty: true},
+		{name: "null cfg + planned null + null api → null", cfg: nullList, apiList: nullList, planned: nullList, expectNullOut: true},
+		{name: "null cfg + planned populated + populated api → api (adopted list)", cfg: nullList, apiList: apiPopulated, planned: populated, expectSameAs: "api"},
+		{name: "null cfg + planned populated + null api → api (drift)", cfg: nullList, apiList: nullList, planned: populated, expectNullOut: true},
+
+		// A known config wins outright; the planned value is irrelevant.
+		{name: "empty cfg → empty (user clear intent)", cfg: empty, apiList: nullList, planned: unknown, expectEmpty: true},
+		{name: "populated cfg + null api → cfg (lag fallback)", cfg: populated, apiList: nullList, planned: unknown, expectSameAs: "cfg"},
+		{name: "populated cfg + populated api → api", cfg: populated, apiList: apiPopulated, planned: unknown, expectSameAs: "api"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := coalesceListForConfig(tc.cfg, tc.apiList)
+			got := coalesceListForConfig(tc.cfg, tc.apiList, tc.planned)
+			if got.IsUnknown() {
+				t.Fatalf("result must be wholly known, got %v", got)
+			}
 			if tc.expectNullOut {
 				if !got.IsNull() {
 					t.Fatalf("expected null, got %v", got)
