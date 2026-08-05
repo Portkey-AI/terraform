@@ -2,6 +2,8 @@ package provider
 
 import (
 	"fmt"
+	"os"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -159,6 +161,96 @@ func TestAccGuardrailResource_multipleChecks(t *testing.T) {
 			},
 		},
 	})
+}
+
+// testAccPreCheckOrganisationGuardrails gates tests that create
+// organisation-scoped guardrails.
+//
+// Portkey scopes guardrail access per verb, and organisation-level guardrails
+// use their own `organisation_guardrails.*` family rather than the
+// `guardrails.*` one every workspace-scoped test in this file relies on. An org
+// admin key that passes all of those can still lack `organisation_guardrails`
+// scopes entirely and get `403 AB03 You do not have enough permissions to
+// execute this request`. Without this opt-in the weekly acceptance-test workflow
+// would go red on a key permission gap rather than a provider defect.
+func testAccPreCheckOrganisationGuardrails(t *testing.T) {
+	if os.Getenv("PORTKEY_TEST_ORG_GUARDRAILS") == "" {
+		t.Skip("PORTKEY_TEST_ORG_GUARDRAILS must be set to run tests that create organisation-scoped guardrails; the key needs organisation_guardrails.create, .read, .update and .delete")
+	}
+	testAccPreCheck(t)
+}
+
+// TestAccGuardrailResource_organisationScoped tests the full CRUD lifecycle of
+// an organisation-scoped guardrail, created by omitting workspace_id. The API
+// derives the organisation from the Admin API key, and workspace_id must stay
+// null in state (rather than "") so a config that omits it shows no drift.
+func TestAccGuardrailResource_organisationScoped(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-orgguard")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheckOrganisationGuardrails(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read
+			{
+				Config: testAccGuardrailResourceConfigOrgScoped(rName, 1000),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_guardrail.test", "id"),
+					resource.TestCheckResourceAttrSet("portkey_guardrail.test", "slug"),
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "status", "active"),
+					resource.TestCheckNoResourceAttr("portkey_guardrail.test", "workspace_id"),
+				),
+			},
+			// Re-apply must be a no-op: workspace_id must not drift to "".
+			{
+				Config:   testAccGuardrailResourceConfigOrgScoped(rName, 1000),
+				PlanOnly: true,
+			},
+			// Import
+			{
+				ResourceName:            "portkey_guardrail.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
+			},
+			// Update in place (checks change), still org-scoped. Needs
+			// `organisation_guardrails.update`.
+			{
+				Config: testAccGuardrailResourceConfigOrgScoped(rName, 2000),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_guardrail.test", "name", rName),
+					resource.TestCheckNoResourceAttr("portkey_guardrail.test", "workspace_id"),
+					// Confirm the PUT actually landed rather than just returning 200.
+					resource.TestMatchResourceAttr("portkey_guardrail.test", "checks", regexp.MustCompile(`"maxWords":\s*2000`)),
+				),
+			},
+			// Delete happens automatically in TestCase.
+		},
+	})
+}
+
+func testAccGuardrailResourceConfigOrgScoped(name string, maxWords int) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_guardrail" "test" {
+  name   = %[1]q
+  checks = jsonencode([
+    {
+      id = "default.wordCount"
+      parameters = {
+        minWords = 1
+        maxWords = %[2]d
+      }
+    }
+  ])
+  actions = jsonencode({
+    onFail  = "log"
+    message = "Word count check failed"
+  })
+}
+`, name, maxWords)
 }
 
 func testAccGuardrailResourceConfig(name, workspaceID string) string {

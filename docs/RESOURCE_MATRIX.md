@@ -6,21 +6,22 @@
 
 | Category | Resources | Data Sources | Test Status |
 |----------|:---------:|:------------:|-------------|
-| Organization | 5 | 4 | ⚠️ Workspace delete blocked |
+| Organization | 6 | 4 | ⚠️ Workspace delete blocked |
 | AI Gateway | 6 | 12 | ✅ All passing |
 | Governance | 3 | 6 | ✅ All passing |
 | Access Control | 1 | 2 | ✅ All passing |
 | MCP Gateway | 3 | 2 | ✅ All passing (11 tests) |
 | Secret Management | 1 | 2 | ✅ Plan-time validation covered |
 | Identity / SCIM | 1 | 1 | ✅ Unit + acceptance |
-| **Total** | **19** | **29** | **All passing** |
+| **Total** | **20** | **29** | **All passing** |
 
 ## Provider Resources
 
 | Resource | Create | Read | Update | Delete | Import | API Status | Test Status |
 |----------|:------:|:----:|:------:|:------:|:------:|------------|-------------|
 | `portkey_workspace` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Delete requires name in body | ⚠️ 10 tests, delete blocked by backend |
-| `portkey_workspace_defaults` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Default input/output guardrails live on the workspace; written via PUT `/admin/workspaces/{id}` `defaults`. Create omits unset fields (preserves existing guardrails); Update treats a removed field as a clear. No reset endpoint — Delete clears both lists | ✅ Unit + acc tests |
+| `portkey_workspace_defaults` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Default input/output guardrails live on the workspace; written via PUT `/admin/workspaces/{id}` `defaults`. Both lists are `Optional+Computed`: an omitted field is never sent (existing guardrails preserved and adopted into state), `[]` clears. No reset endpoint — Delete clears both lists | ✅ Unit + acc tests |
+| `portkey_organisation_defaults` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Default input/output guardrails for the whole organisation, via `GET`/`PUT /v2/admin/organisation/defaults` (note: `/v2`, not `/v1`). Singleton — the organisation comes from the Admin API key, so there is no `organisation_id` and the import ID is ignored. Requires at least one of the two lists (enforced at plan time); only org-scoped guardrails accepted. Both lists are `Optional+Computed`: an omitted field is never sent (existing guardrails preserved and adopted into state), `[]` clears. No reset endpoint — Delete clears both lists. Lifecycle acc test is env-gated behind `PORTKEY_TEST_ORG_DEFAULTS` because it overwrites shared org state | ✅ Unit (client + helpers) + acc tests |
 | `portkey_workspace_member` | ✅ | ⚠️ | ✅ | ✅ | ✅ | getMember API has issues | Skipped |
 | `portkey_workspace_security_settings` | ✅ | ✅ | ✅ | ⚠️ | ✅ | API requires full 35-field object on PUT (sparse rejected as 400 AB01); Delete removes state only, no API reset endpoint exists | ✅ 2 acc tests (basic + partial-preserves-others) |
 | `portkey_user_invite` | ✅ | ✅ | ❌ | ✅ | ✅ | Update API doesn't exist | ✅ Passing |
@@ -31,7 +32,7 @@
 | `portkey_prompt` | ✅ | ✅ | ⚠️ | ✅ | ✅ | Template updates need versions | ✅ Passing |
 | `portkey_prompt_partial` | ✅ | ✅ | ⚠️ | ✅ | ✅ | Content updates need versions | ✅ Passing |
 | `portkey_prompt_collection` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
-| `portkey_guardrail` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
+| `portkey_guardrail` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working. `workspace_id` is optional: omit it for an organisation-scoped guardrail (needed by `portkey_organisation_defaults`). Org-scoped operations need the `organisation_guardrails.*` scopes, which are separate from the workspace-scoped `guardrails.*` family | ✅ Passing; `TestAccGuardrailResource_organisationScoped` is env-gated behind `PORTKEY_TEST_ORG_GUARDRAILS` |
 | `portkey_usage_limits_policy` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
 | `portkey_rate_limits_policy` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD working | ✅ Passing |
 | `portkey_mcp_integration` | ✅ | ✅ | ✅ | ✅ | ✅ | Full CRUD | ✅ Passing |
@@ -114,6 +115,22 @@ PUT    /admin/workspaces/{id}      → Update (also accepts `security_settings`;
                                             write path for `portkey_workspace_defaults`)
 DELETE /admin/workspaces/{id}      → Delete (requires {"name": "..."} in body)
 ```
+
+### Organisation Defaults
+```
+GET    /v2/admin/organisation/defaults  → Read  (returns input_guardrails /
+                                                 output_guardrails as
+                                                 {id, slug} objects)
+PUT    /v2/admin/organisation/defaults  → Update (body takes plain string
+                                                 arrays of IDs and/or slugs;
+                                                 returns {})
+```
+
+**Notes:**
+- These are the only endpoints this provider uses under `/v2` — the configured `base_url` ends with `/v1`, so the client swaps the version suffix (`organisationDefaultsURL`).
+- No organisation identifier is sent or returned; the organisation is derived from the Admin API key, which must hold `organisation_settings.read` / `organisation_settings.update`.
+- `PUT` requires at least one of `input_guardrails` / `output_guardrails`. A field that is present replaces that list (`[]` clears it); an omitted field is preserved.
+- Workspace-scoped guardrails are rejected with `Workspace-scoped guardrails cannot be set as organisation defaults`.
 
 ### Users
 ```
@@ -222,12 +239,18 @@ PUT    /prompts/partials/{slugOrId}/makeDefault → Set default version
 
 ### Guardrails
 ```
-POST   /guardrails                 → Create (requires workspace_id or organisation_id, checks, actions)
+POST   /guardrails                 → Create (requires name, checks, actions;
+                                            workspace_id optional)
 GET    /guardrails                 → List (requires ?workspace_id=xxx)
 GET    /guardrails/{slugOrId}      → Read
 PUT    /guardrails/{slugOrId}      → Update
 DELETE /guardrails/{slugOrId}      → Delete
 ```
+
+**Guardrail Scope:**
+Scope is decided purely by whether `workspace_id` is in the create body — include it for a workspace-scoped guardrail, omit it for an organisation-scoped one. The organisation always comes from the authenticated API key, so `organisation_id` in the request body is inert (the controller never reads it). Read/Update/Delete resolve scope from the guardrail record itself, so they need no scope parameter. Organisation-scoped guardrails are the only ones accepted by `portkey_organisation_defaults`.
+
+Permissions follow the guardrail's scope and are granted per verb: organisation-scoped operations need `organisation_guardrails.create` / `.read` / `.update` / `.delete` / `.list`, workspace-scoped ones the parallel `guardrails.*` family. The two families are independent, so a key that manages workspace guardrails may hold none of the organisation ones. A missing scope returns `403 AB03`.
 
 **Guardrail Checks:**
 Checks define what to validate. Each check has an `id` and optional `parameters`:

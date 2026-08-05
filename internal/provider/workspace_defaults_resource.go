@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -9,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -67,21 +69,36 @@ func (r *workspaceDefaultsResource) Schema(_ context.Context, _ resource.SchemaR
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
+			// Optional+Computed: omitting the attribute means "Terraform does
+			// not manage this list", so state adopts whatever the API holds.
+			// Without Computed, the preserve-on-omit behaviour below would
+			// write an API value against a planned null and Terraform would
+			// fail with "Provider produced inconsistent result after apply".
 			"input_guardrails": schema.ListAttribute{
 				Description: "Guardrails applied to inbound requests. The API accepts guardrail IDs " +
 					"or slugs but returns slugs on read under admin-API-key auth, so prefer " +
 					"`portkey_guardrail.foo.slug` in HCL to avoid a permanent plan diff. " +
-					"Setting to `[]` clears all input guardrails.",
+					"Omitting this attribute leaves any existing input guardrails untouched; " +
+					"set it to `[]` to clear them.",
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"output_guardrails": schema.ListAttribute{
 				Description: "Guardrails applied to model responses. The API accepts guardrail IDs " +
 					"or slugs but returns slugs on read under admin-API-key auth, so prefer " +
 					"`portkey_guardrail.foo.slug` in HCL to avoid a permanent plan diff. " +
-					"Setting to `[]` clears all output guardrails.",
+					"Omitting this attribute leaves any existing output guardrails untouched; " +
+					"set it to `[]` to clear them.",
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -110,15 +127,29 @@ func (r *workspaceDefaultsResource) Create(ctx context.Context, req resource.Cre
 		return
 	}
 
-	// On Create, prior state is empty. marshalGuardrailsForUpdate returns nil
-	// (omit field) for both null-config and unknown, so nothing that wasn't
-	// asked for will be touched on the workspace.
+	var config workspaceDefaultsResourceModel
+	diags = req.Config.Get(ctx, &config)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Read from config, not plan: under Optional+Computed an omitted list is
+	// unknown in the plan but null in the config, and only the config
+	// distinguishes "leave this alone" from "clear it". marshalGuardrailsForUpdate
+	// yields nil for an omitted list, which preserveOmittedGuardrails then fills
+	// in from the workspace's current value.
 	updateReq := client.UpdateWorkspaceRequest{
 		Defaults: &client.UpdateWorkspaceDefaults{},
 	}
-	inRaw, gDiags := marshalGuardrailsForUpdate(ctx, plan.InputGuardrails, types.ListNull(types.StringType))
+	inRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.InputGuardrails)
 	resp.Diagnostics.Append(gDiags...)
-	outRaw, gDiags := marshalGuardrailsForUpdate(ctx, plan.OutputGuardrails, types.ListNull(types.StringType))
+	outRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.OutputGuardrails)
+	resp.Diagnostics.Append(gDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	inRaw, outRaw, gDiags = r.preserveOmittedGuardrails(ctx, plan.WorkspaceID.ValueString(), inRaw, outRaw)
 	resp.Diagnostics.Append(gDiags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -141,7 +172,10 @@ func (r *workspaceDefaultsResource) Create(ctx context.Context, req resource.Cre
 	// a slug. Mirror the same value into `id` so the two attributes stay
 	// aligned for imports and Reads.
 	plan.ID = plan.WorkspaceID
-	applyDefaultsFromAPI(&plan, workspace, plan.InputGuardrails, plan.OutputGuardrails)
+	resp.Diagnostics.Append(applyDefaultsFromAPI(&plan, workspace, config.InputGuardrails, config.OutputGuardrails)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -217,19 +251,17 @@ func (r *workspaceDefaultsResource) Update(ctx context.Context, req resource.Upd
 		return
 	}
 
-	var state workspaceDefaultsResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
 	updateReq := client.UpdateWorkspaceRequest{
 		Defaults: &client.UpdateWorkspaceDefaults{},
 	}
-	inRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.InputGuardrails, state.InputGuardrails)
+	inRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.InputGuardrails)
 	resp.Diagnostics.Append(gDiags...)
-	outRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.OutputGuardrails, state.OutputGuardrails)
+	outRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.OutputGuardrails)
+	resp.Diagnostics.Append(gDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	inRaw, outRaw, gDiags = r.preserveOmittedGuardrails(ctx, plan.WorkspaceID.ValueString(), inRaw, outRaw)
 	resp.Diagnostics.Append(gDiags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -248,7 +280,10 @@ func (r *workspaceDefaultsResource) Update(ctx context.Context, req resource.Upd
 
 	// Preserve user-provided workspace_id (see Create for rationale).
 	plan.ID = plan.WorkspaceID
-	applyDefaultsFromAPI(&plan, workspace, config.InputGuardrails, config.OutputGuardrails)
+	resp.Diagnostics.Append(applyDefaultsFromAPI(&plan, workspace, config.InputGuardrails, config.OutputGuardrails)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -296,16 +331,85 @@ func (r *workspaceDefaultsResource) ImportState(ctx context.Context, req resourc
 // error with "Provider produced inconsistent result after apply"). When
 // config is [] we mirror an empty list so state matches the user's HCL
 // even if the API happened to echo null.
-func applyDefaultsFromAPI(plan *workspaceDefaultsResourceModel, workspace *client.Workspace, inputCfg, outputCfg types.List) {
+func applyDefaultsFromAPI(plan *workspaceDefaultsResourceModel, workspace *client.Workspace, inputCfg, outputCfg types.List) diag.Diagnostics {
+	var diags diag.Diagnostics
+	// Capture before the assignments below overwrite them: these are the values
+	// Terraform planned for the attributes, which the applied state must match.
+	plannedIn, plannedOut := plan.InputGuardrails, plan.OutputGuardrails
 	if workspace.Defaults == nil {
-		plan.InputGuardrails = coalesceListForConfig(inputCfg, types.ListNull(types.StringType))
-		plan.OutputGuardrails = coalesceListForConfig(outputCfg, types.ListNull(types.StringType))
-		return
+		plan.InputGuardrails = coalesceListForConfig(inputCfg, types.ListNull(types.StringType), plannedIn)
+		plan.OutputGuardrails = coalesceListForConfig(outputCfg, types.ListNull(types.StringType), plannedOut)
+		return diags
 	}
-	inList, _ := guardrailsFromAPIToList(workspace.Defaults.InputGuardrails)
-	outList, _ := guardrailsFromAPIToList(workspace.Defaults.OutputGuardrails)
-	plan.InputGuardrails = coalesceListForConfig(inputCfg, inList)
-	plan.OutputGuardrails = coalesceListForConfig(outputCfg, outList)
+	inList, d := guardrailsFromAPIToList(workspace.Defaults.InputGuardrails)
+	diags.Append(d...)
+	outList, d := guardrailsFromAPIToList(workspace.Defaults.OutputGuardrails)
+	diags.Append(d...)
+	if diags.HasError() {
+		return diags
+	}
+	plan.InputGuardrails = coalesceListForConfig(inputCfg, inList, plannedIn)
+	plan.OutputGuardrails = coalesceListForConfig(outputCfg, outList, plannedOut)
+	return diags
+}
+
+// preserveOmittedGuardrails fills in guardrail lists the user did not configure
+// with the workspace's current values.
+//
+// Unlike PUT /v2/admin/organisation/defaults, which preserves fields absent from
+// the request body, the workspace endpoint replaces the whole `defaults` object:
+// a PUT carrying only input_guardrails clears output_guardrails. Sending the
+// current value back unchanged is therefore the only way to make an omitted
+// attribute mean "leave this alone". This mirrors how
+// portkey_workspace_security_settings overlays a partial config onto the current
+// server state before writing.
+//
+// A nil raw value means "omitted"; only those are filled in.
+func (r *workspaceDefaultsResource) preserveOmittedGuardrails(ctx context.Context, workspaceID string, inRaw, outRaw json.RawMessage) (json.RawMessage, json.RawMessage, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if inRaw != nil && outRaw != nil {
+		return inRaw, outRaw, diags
+	}
+
+	current, err := r.client.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		diags.AddError(
+			"Error reading current workspace defaults",
+			"Could not read workspace "+workspaceID+" to preserve unmanaged guardrails: "+err.Error(),
+		)
+		return inRaw, outRaw, diags
+	}
+	if current.Defaults == nil {
+		return inRaw, outRaw, diags
+	}
+
+	if inRaw == nil {
+		inRaw, err = json.Marshal(nonEmptyStrings(current.Defaults.InputGuardrails))
+		if err != nil {
+			diags.AddError("Error marshaling current input guardrails", err.Error())
+			return inRaw, outRaw, diags
+		}
+	}
+	if outRaw == nil {
+		outRaw, err = json.Marshal(nonEmptyStrings(current.Defaults.OutputGuardrails))
+		if err != nil {
+			diags.AddError("Error marshaling current output guardrails", err.Error())
+			return inRaw, outRaw, diags
+		}
+	}
+	return inRaw, outRaw, diags
+}
+
+// nonEmptyStrings drops blank entries and normalizes nil to an empty slice so it
+// marshals as [] rather than null.
+func nonEmptyStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // reconcileListAfterRead reconciles prior state with the just-read API
@@ -322,13 +426,22 @@ func reconcileListAfterRead(state, apiList types.List) types.List {
 }
 
 // coalesceListForConfig reconciles the user's config with the API response.
-// - config null → mirror API list as-is (including null when API is empty).
-// - config [] → force empty list (user asked to clear; state must match HCL).
-// - config populated, API null (lag) → trust config.
-// - otherwise → trust API list.
-func coalesceListForConfig(cfg, apiList types.List) types.List {
+//   - config null → the attribute is unmanaged. Under Optional+Computed with
+//     UseStateForUnknown Terraform planned the prior state for it, and the
+//     applied value has to match that plan, so preserve the planned value when
+//     it and the API agree the list is empty (null and [] mean the same thing
+//     here, and the API reports both as null). Otherwise adopt the API list so
+//     drift surfaces. `planned` is unknown on create, where there is no prior
+//     state to preserve — returning it would leave an unknown value in state.
+//   - config [] → force empty list (user asked to clear; state must match HCL).
+//   - config populated, API null (lag) → trust config.
+//   - otherwise → trust API list.
+func coalesceListForConfig(cfg, apiList, planned types.List) types.List {
 	if cfg.IsNull() || cfg.IsUnknown() {
-		return apiList
+		if planned.IsUnknown() {
+			return apiList
+		}
+		return reconcileListAfterRead(planned, apiList)
 	}
 	if len(cfg.Elements()) == 0 {
 		return types.ListValueMust(types.StringType, []attr.Value{})

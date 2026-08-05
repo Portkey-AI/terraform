@@ -7,6 +7,65 @@ export PORTKEY_API_KEY="your-admin-api-key"
 make testacc
 ```
 
+## Environment Variables
+
+Copy `.env.example` to `.env` and fill it in. Tests read these directly from the
+environment, so export them (`set -a && source .env && set +a`) rather than
+relying on a bare `source`.
+
+### Required
+
+| Variable | Purpose |
+|----------|---------|
+| `PORTKEY_API_KEY` | Admin API key. Every acceptance test skips without it. |
+
+### Fixtures
+
+Optional. Tests needing one either skip or fall back to a default — see the
+helpers in `provider_test.go`.
+
+| Variable | Used by |
+|----------|---------|
+| `TEST_WORKSPACE_ID` | Tests that need an existing workspace. Falls back to a hardcoded UUID, so set it for your own organisation. |
+| `TEST_WORKSPACE_SLUG` | Slug-to-UUID resolution tests. |
+| `TEST_COLLECTION_ID` | Prompt tests. |
+| `TEST_VIRTUAL_KEY` | Prompt tests. |
+| `TEST_INTEGRATION_ID` | Provider / virtual key tests. |
+| `TEST_SCIM_GROUP_ID` | SCIM workspace mapping tests. |
+
+### Opt-in gates
+
+Unset by default. The tests behind them **skip rather than fail**, which keeps
+the weekly workflow green for keys and organisations that can't run them. They
+guard two different risks, so read them separately before opting in.
+
+| Variable | Guards | Requires |
+|----------|--------|----------|
+| `PORTKEY_TEST_ORG_GUARDRAILS` | A key permission. Creates organisation-scoped guardrails. | `organisation_guardrails.create` / `.read` / `.update` / `.delete` |
+| `PORTKEY_TEST_ORG_DEFAULTS` | Blast radius. Overwrites the organisation's real default guardrails, and destroy clears both lists. | `organisation_settings.read` / `.update`, plus the scopes above |
+
+Portkey grants guardrail scopes per verb, and organisation-level guardrails use
+their own `organisation_guardrails.*` family rather than the workspace-scoped
+`guardrails.*` one, so a key that passes every workspace-scoped guardrail test
+can still 403 on every organisation-scoped one. Gate that at the test case rather
+than the step: a missing scope fails the first API call, before any step-level
+check would run.
+
+`PORTKEY_TEST_ORG_DEFAULTS` has no per-test isolation — the resource is a
+singleton over shared organisation state — so only set it against an
+organisation you are happy to mutate, and don't run those tests concurrently
+with anything else touching organisation defaults.
+
+To run the full organisation-scoped surface:
+
+```bash
+set -a && source .env && set +a && \
+  TF_ACC=1 PORTKEY_TEST_ORG_GUARDRAILS=1 PORTKEY_TEST_ORG_DEFAULTS=1 \
+  go test ./internal/provider -v -count=1 \
+  -run 'TestAccOrganisationDefaultsResource|TestAccGuardrailResource_organisationScoped' \
+  -timeout 30m
+```
+
 ## How Acceptance Tests Work
 
 The `terraform-plugin-testing` framework runs **real Terraform operations** against the **live Portkey API**:
@@ -140,6 +199,28 @@ func TestAccFeature_basic(t *testing.T) {
     // ...
 }
 ```
+
+For a test that needs an opt-in — an extra key scope, or permission to mutate
+shared state — gate the whole case with a `PreCheck` helper:
+
+```go
+func testAccPreCheckOrganisationGuardrails(t *testing.T) {
+    if os.Getenv("PORTKEY_TEST_ORG_GUARDRAILS") == "" {
+        t.Skip("PORTKEY_TEST_ORG_GUARDRAILS must be set to ...")
+    }
+    testAccPreCheck(t)
+}
+
+resource.Test(t, resource.TestCase{
+    PreCheck: func() { testAccPreCheckOrganisationGuardrails(t) },
+    // ...
+})
+```
+
+Prefer this over a step-level `SkipFunc`. A `SkipFunc` on step 4 does nothing if
+the missing scope already failed step 1, so the workflow still goes red. Document
+any new variable in the tables above and in `.env.example`, and compose helpers
+(rather than duplicating the closure) when a test needs more than one gate.
 
 ## Running Tests
 

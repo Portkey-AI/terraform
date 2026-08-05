@@ -6,43 +6,35 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
 
 func TestMarshalGuardrailsForUpdate(t *testing.T) {
 	ctx := context.Background()
-	nullList := types.ListNull(types.StringType)
-	nonEmptyState := types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g-existing")})
 
 	cases := []struct {
 		name    string
 		cfg     types.List
-		state   types.List
 		want    string
 		wantNil bool
 	}{
 		{
 			name:    "unknown cfg omits field",
 			cfg:     types.ListUnknown(types.StringType),
-			state:   nullList,
 			wantNil: true,
 		},
 		{
-			name:    "null cfg + null state omits field",
-			cfg:     nullList,
-			state:   nullList,
+			// An omitted attribute means "not managed by Terraform", so the
+			// field is omitted regardless of what prior state held. Returning
+			// [] here would destroy guardrails attached out-of-band.
+			name:    "null cfg omits field",
+			cfg:     types.ListNull(types.StringType),
 			wantNil: true,
 		},
 		{
-			name:  "null cfg + populated state clears with []",
-			cfg:   nullList,
-			state: nonEmptyState,
-			want:  "[]",
-		},
-		{
-			name:  "empty cfg clears with []",
-			cfg:   types.ListValueMust(types.StringType, []attr.Value{}),
-			state: nonEmptyState,
-			want:  "[]",
+			name: "empty cfg clears with []",
+			cfg:  types.ListValueMust(types.StringType, []attr.Value{}),
+			want: "[]",
 		},
 		{
 			name: "populated cfg marshals array",
@@ -50,14 +42,13 @@ func TestMarshalGuardrailsForUpdate(t *testing.T) {
 				types.StringValue("g-1"),
 				types.StringValue("g-2"),
 			}),
-			state: nullList,
-			want:  `["g-1","g-2"]`,
+			want: `["g-1","g-2"]`,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, diags := marshalGuardrailsForUpdate(ctx, tc.cfg, tc.state)
+			got, diags := marshalGuardrailsForUpdate(ctx, tc.cfg)
 			if diags.HasError() {
 				t.Fatalf("unexpected diags: %v", diags)
 			}
@@ -135,6 +126,78 @@ func TestGuardrailsFromAPIToList(t *testing.T) {
 	}
 }
 
+func TestOrganisationGuardrailRefsToList(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []client.OrganisationGuardrailRef
+		want []string
+		null bool
+	}{
+		{
+			name: "nil input returns null list",
+			in:   nil,
+			null: true,
+		},
+		{
+			name: "empty input returns null list",
+			in:   []client.OrganisationGuardrailRef{},
+			null: true,
+		},
+		{
+			name: "slug is preferred over id",
+			in: []client.OrganisationGuardrailRef{
+				{ID: "11111111-1111-1111-1111-111111111111", Slug: "gr_one"},
+				{ID: "22222222-2222-2222-2222-222222222222", Slug: "gr_two"},
+			},
+			want: []string{"gr_one", "gr_two"},
+		},
+		{
+			name: "falls back to id when slug is missing",
+			in: []client.OrganisationGuardrailRef{
+				{ID: "11111111-1111-1111-1111-111111111111"},
+				{ID: "22222222-2222-2222-2222-222222222222", Slug: "gr_two"},
+			},
+			want: []string{"11111111-1111-1111-1111-111111111111", "gr_two"},
+		},
+		{
+			name: "entries with neither id nor slug are dropped",
+			in:   []client.OrganisationGuardrailRef{{}, {}},
+			null: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, diags := organisationGuardrailRefsToList(tc.in)
+			if diags.HasError() {
+				t.Fatalf("unexpected diags: %v", diags)
+			}
+			if tc.null {
+				if !got.IsNull() {
+					t.Fatalf("expected null list, got %v", got)
+				}
+				return
+			}
+			if got.IsNull() {
+				t.Fatalf("expected populated list, got null")
+			}
+			var entries []string
+			diags = got.ElementsAs(context.Background(), &entries, false)
+			if diags.HasError() {
+				t.Fatalf("ElementsAs failed: %v", diags)
+			}
+			if len(entries) != len(tc.want) {
+				t.Fatalf("expected %d entries, got %d (%v)", len(tc.want), len(entries), entries)
+			}
+			for i := range entries {
+				if entries[i] != tc.want[i] {
+					t.Fatalf("entry[%d] = %q, want %q", i, entries[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestReconcileListAfterRead(t *testing.T) {
 	nullList := types.ListNull(types.StringType)
 	empty := types.ListValueMust(types.StringType, []attr.Value{})
@@ -171,25 +234,45 @@ func TestCoalesceListForConfig(t *testing.T) {
 	populated := types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g-1")})
 	apiPopulated := types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g-2")})
 
+	unknown := types.ListUnknown(types.StringType)
+
 	tests := []struct {
 		name          string
 		cfg           types.List
 		apiList       types.List
+		planned       types.List
 		wantEqual     types.List
 		expectEmpty   bool
 		expectSameAs  string // "cfg" or "api"
 		expectNullOut bool
 	}{
-		{name: "null cfg + null api → null", cfg: nullList, apiList: nullList, expectNullOut: true},
-		{name: "null cfg + populated api → api", cfg: nullList, apiList: apiPopulated, expectSameAs: "api"},
-		{name: "empty cfg → empty (user clear intent)", cfg: empty, apiList: nullList, expectEmpty: true},
-		{name: "populated cfg + null api → cfg (lag fallback)", cfg: populated, apiList: nullList, expectSameAs: "cfg"},
-		{name: "populated cfg + populated api → api", cfg: populated, apiList: apiPopulated, expectSameAs: "api"},
+		// Create: nothing was planned, so the API is the only source.
+		{name: "null cfg + unknown planned + null api → null", cfg: nullList, apiList: nullList, planned: unknown, expectNullOut: true},
+		{name: "null cfg + unknown planned + populated api → api", cfg: nullList, apiList: apiPopulated, planned: unknown, expectSameAs: "api"},
+
+		// Update: the attribute was omitted, so Terraform planned prior state
+		// and the applied value has to match it.
+		//
+		// Regression: an explicit [] that is later omitted must stay [] rather
+		// than flipping to null, which fails the apply with "Provider produced
+		// inconsistent result after apply".
+		{name: "null cfg + planned [] + null api → [] (regression)", cfg: nullList, apiList: nullList, planned: empty, expectEmpty: true},
+		{name: "null cfg + planned null + null api → null", cfg: nullList, apiList: nullList, planned: nullList, expectNullOut: true},
+		{name: "null cfg + planned populated + populated api → api (adopted list)", cfg: nullList, apiList: apiPopulated, planned: populated, expectSameAs: "api"},
+		{name: "null cfg + planned populated + null api → api (drift)", cfg: nullList, apiList: nullList, planned: populated, expectNullOut: true},
+
+		// A known config wins outright; the planned value is irrelevant.
+		{name: "empty cfg → empty (user clear intent)", cfg: empty, apiList: nullList, planned: unknown, expectEmpty: true},
+		{name: "populated cfg + null api → cfg (lag fallback)", cfg: populated, apiList: nullList, planned: unknown, expectSameAs: "cfg"},
+		{name: "populated cfg + populated api → api", cfg: populated, apiList: apiPopulated, planned: unknown, expectSameAs: "api"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := coalesceListForConfig(tc.cfg, tc.apiList)
+			got := coalesceListForConfig(tc.cfg, tc.apiList, tc.planned)
+			if got.IsUnknown() {
+				t.Fatalf("result must be wholly known, got %v", got)
+			}
 			if tc.expectNullOut {
 				if !got.IsNull() {
 					t.Fatalf("expected null, got %v", got)
