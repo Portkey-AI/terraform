@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -33,17 +34,17 @@ type rateLimitsPolicyResource struct {
 
 // rateLimitsPolicyResourceModel maps the resource schema data.
 type rateLimitsPolicyResourceModel struct {
-	ID          types.String  `tfsdk:"id"`
-	Name        types.String  `tfsdk:"name"`
-	WorkspaceID types.String  `tfsdk:"workspace_id"`
-	Conditions  types.String  `tfsdk:"conditions"`
-	GroupBy     types.String  `tfsdk:"group_by"`
-	Type        types.String  `tfsdk:"type"`
-	Unit        types.String  `tfsdk:"unit"`
-	Value       types.Float64 `tfsdk:"value"`
-	Status      types.String  `tfsdk:"status"`
-	CreatedAt   types.String  `tfsdk:"created_at"`
-	UpdatedAt   types.String  `tfsdk:"updated_at"`
+	ID          types.String         `tfsdk:"id"`
+	Name        types.String         `tfsdk:"name"`
+	WorkspaceID types.String         `tfsdk:"workspace_id"`
+	Conditions  jsontypes.Normalized `tfsdk:"conditions"`
+	GroupBy     jsontypes.Normalized `tfsdk:"group_by"`
+	Type        types.String         `tfsdk:"type"`
+	Unit        types.String         `tfsdk:"unit"`
+	Value       types.Float64        `tfsdk:"value"`
+	Status      types.String         `tfsdk:"status"`
+	CreatedAt   types.String         `tfsdk:"created_at"`
+	UpdatedAt   types.String         `tfsdk:"updated_at"`
 }
 
 // Metadata returns the resource type name.
@@ -75,13 +76,15 @@ func (r *rateLimitsPolicyResource) Schema(_ context.Context, _ resource.SchemaRe
 				},
 			},
 			"conditions": schema.StringAttribute{
-				Description: "JSON array of conditions that define which requests the policy applies to. Each condition has 'key' and 'value'.",
+				CustomType:  jsontypes.NormalizedType{},
+				Description: "JSON array of conditions that define which requests the policy applies to. Each condition has 'key', 'value' (string or array of strings), and an optional 'excludes' (string or array of strings).",
 				Required:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"group_by": schema.StringAttribute{
+				CustomType:  jsontypes.NormalizedType{},
 				Description: "JSON array of group by fields that define how rate limiting is applied. Each item has 'key'.",
 				Required:    true,
 				PlanModifiers: []planmodifier.String{
@@ -199,8 +202,16 @@ func (r *rateLimitsPolicyResource) Create(ctx context.Context, req resource.Crea
 		return
 	}
 
+	// Preserve plan values for RequiresReplace JSON attributes so Terraform's
+	// post-apply consistency check doesn't fail due to key ordering differences.
+	planConditions := plan.Conditions
+	planGroupBy := plan.GroupBy
+
 	// Map response body to schema
 	r.mapPolicyToState(&plan, policy, false)
+
+	plan.Conditions = planConditions
+	plan.GroupBy = planGroupBy
 
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
@@ -230,15 +241,7 @@ func (r *rateLimitsPolicyResource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 
-	// Preserve user's JSON formatting
-	oldConditions := state.Conditions
-	oldGroupBy := state.GroupBy
-
 	r.mapPolicyToState(&state, policy, true)
-
-	// Keep original formatting if semantically equal
-	state.Conditions = preserveJSONFormatting(oldConditions.ValueString(), state.Conditions.ValueString())
-	state.GroupBy = preserveJSONFormatting(oldGroupBy.ValueString(), state.GroupBy.ValueString())
 
 	// Set refreshed state
 	diags = resp.State.Set(ctx, &state)
@@ -344,22 +347,18 @@ func (r *rateLimitsPolicyResource) mapPolicyToState(state *rateLimitsPolicyResou
 	state.Value = types.Float64Value(policy.Value)
 	state.Status = types.StringValue(policy.Status)
 
-	// Convert conditions to JSON string - preserve from state if set (RequiresReplace)
 	if !preserveRequiresReplace || state.Conditions.IsNull() || state.Conditions.IsUnknown() {
 		if policy.Conditions != nil {
-			conditionsBytes, err := json.Marshal(policy.Conditions)
-			if err == nil {
-				state.Conditions = types.StringValue(string(conditionsBytes))
+			if s, err := canonicalJSON(policy.Conditions); err == nil {
+				state.Conditions = jsontypes.NewNormalizedValue(s)
 			}
 		}
 	}
 
-	// Convert group_by to JSON string - preserve from state if set (RequiresReplace)
 	if !preserveRequiresReplace || state.GroupBy.IsNull() || state.GroupBy.IsUnknown() {
 		if policy.GroupBy != nil {
-			groupByBytes, err := json.Marshal(policy.GroupBy)
-			if err == nil {
-				state.GroupBy = types.StringValue(string(groupByBytes))
+			if s, err := canonicalJSON(policy.GroupBy); err == nil {
+				state.GroupBy = jsontypes.NewNormalizedValue(s)
 			}
 		}
 	}

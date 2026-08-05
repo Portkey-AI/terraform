@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.32] - 2026-08-05
+
+### Added
+- **`portkey_organisation_defaults` resource** — manage default `input_guardrails` / `output_guardrails` for the whole organisation via `GET`/`PUT /v2/admin/organisation/defaults`. These are the first `/v2` endpoints used by the provider, so the client swaps the `/v1` suffix on the configured `base_url` for `/v2`. The resource is a singleton: the Admin API derives the organisation from the API key, so there is no `organisation_id` attribute, exactly one instance may exist per provider configuration, and `terraform import` ignores the supplied ID (`id` is always `organisation_defaults`). At least one of the two lists must be set — the API rejects a write carrying neither, and the provider surfaces this at plan time rather than as a 400 on apply. Only organisation-scoped guardrails are accepted; passing a workspace-scoped guardrail fails with `Workspace-scoped guardrails cannot be set as organisation defaults`. Both lists are `Optional+Computed`: omitting one means Terraform does not manage it, so guardrails attached elsewhere (e.g. through the Portkey UI) are preserved and adopted into state, while setting a list to `[]` always clears it (same semantics as `portkey_workspace_defaults`, see resource docs). Reads return both guardrail IDs and slugs and the provider stores slugs, so reference guardrails via `portkey_guardrail.foo.slug` to avoid a permanent plan diff. Destroying the resource clears both lists; there is no separate delete endpoint. Requires the `organisation_settings.read` / `organisation_settings.update` scopes on the Admin API key.
+- **Organisation-scoped `portkey_guardrail` support** — `workspace_id` is now optional. Omitting it creates an organisation-scoped guardrail, which is what `portkey_organisation_defaults` requires; the organisation is taken from the Admin API key (the `/guardrails` create controller never reads `organisation_id` from the body, so scope is decided purely by the presence of `workspace_id`). Existing configurations are unaffected, since setting `workspace_id` keeps the previous workspace-scoped behaviour and scope remains immutable (changing it forces replacement). Organisation-scoped guardrails need the `organisation_guardrails.create` / `.read` / `.update` / `.delete` scopes on the Admin API key, which are separate from the workspace-scoped `guardrails.*` family.
+
+### Changed
+- **`portkey_workspace_defaults` no longer clears a guardrail list when the attribute is removed** — `input_guardrails` and `output_guardrails` are now `Optional+Computed`, and an omitted attribute uniformly means "Terraform does not manage this list" on update as well as on create. Previously, removing an attribute you had been managing was treated as an explicit removal and cleared those guardrails. To clear a list, set it to `[]` explicitly. This is what makes it possible to manage only one of the two lists, and to adopt the resource against a workspace whose guardrails were attached through the Portkey UI.
+
+### Fixed
+- **"Provider produced inconsistent result after apply" on `portkey_workspace_defaults` and `portkey_organisation_defaults`** — omitting one guardrail list while the workspace or organisation already had guardrails of that kind attached failed the apply outright. The provider preserved those guardrails (correctly) and wrote them into state, but because the attribute was `Optional` without `Computed`, Terraform had planned `null` for it and rejected the mismatch. This broke the documented adoption path — pointing the resource at a workspace or organisation whose defaults were set through the Portkey UI — and was most likely to bite at organisation level, where defaults are far more likely to be pre-populated than in a fresh workspace. Both lists are now `Optional+Computed`, so state legitimately adopts what the API reports. The same error also hit a second path: dropping an attribute that had previously been set to an explicit `[]`. Under `Optional+Computed` an omitted attribute plans to the prior state (`[]`), but the apply wrote the API's value straight through and the API reports an empty list as null, so the applied value contradicted the plan. Empty and null are now treated as equivalent on apply, matching how refresh has always reconciled them.
+- **`portkey_workspace_defaults` silently cleared the list it was not managing** — the workspace `PUT` replaces the whole `defaults` object, so a request carrying only `input_guardrails` also cleared `output_guardrails`, and vice versa. Omitting an attribute destroyed those guardrails instead of preserving them, contrary to the documented behaviour. The provider now reads the workspace's current defaults and sends the unmanaged list back unchanged — the same overlay pattern `portkey_workspace_security_settings` uses for its partial writes. `portkey_organisation_defaults` needs no such merge: `PUT /v2/admin/organisation/defaults` preserves fields absent from the request body.
+- **`portkey_guardrail` empty `workspace_id` in state** — an organisation-scoped guardrail (no workspace) is returned by the API with an empty `workspace_id`, which the provider stored as `""` instead of null and would surface as a permanent plan diff against a config that omits the attribute. The API's empty string now maps back to null.
+
+## [0.2.31] - 2026-08-04
+
+### Fixed
+- **Departed-user 403s no longer wedge `plan`/`apply`** - `portkey_api_key` and `portkey_workspace_member` Read now treat 403/404 responses as missing-resource via the shared `client.IsNotFound` helper, matching `portkey_workspace` and `portkey_workspace_defaults`. When a user is removed from the organisation, the Admin API returns `403 AB03` (not 404) for reads of that user's workspace API keys and memberships; `portkey_api_key` only removed state on a literal `"404"` string match and `portkey_workspace_member` had no not-found handling at all, so a single departed user permanently broke `plan`/`apply` for any state containing their resources until every affected address was manually `terraform state rm`'d. This was especially painful for `for_each` over `data.portkey_users`. Replacing the string match also removes a false-positive path where any error body merely containing `"404"` (e.g. a request ID) was treated as not-found.
+
+## [0.2.30] - 2026-08-04
+
+### Added
+- **Custom usage-limit reset intervals** — `portkey_usage_limits_policy` now supports `periodic_reset_days` (1–365) for reset cadences the fixed `periodic_reset` enum can't express, and exposes the API-computed `next_usage_reset_at` timestamp. `periodic_reset` and `periodic_reset_days` are mutually exclusive; the provider now rejects the combination at plan time rather than surfacing the API's `AB01 "Cannot set both periodic_reset and periodic_reset_days"` at apply time. Both new attributes are also exposed on the `portkey_usage_limits_policy` and `portkey_usage_limits_policies` data sources. Changing `periodic_reset_days` forces replacement, matching the existing `periodic_reset` behavior.
+- **`excludes` in policy conditions** — conditions on `portkey_usage_limits_policy` and `portkey_rate_limits_policy` now accept an optional `excludes` key (string or array of strings) alongside `key`/`value`, so a policy can target a broad set while carving out exceptions (e.g. all `gpt-4*` models except the `-mini` variants).
+
+### Changed
+- **`periodic_reset` is now validated against allowed values** — `portkey_usage_limits_policy` rejects anything other than `monthly` or `weekly` at plan time. The Portkey API already returned `400` for other values, so this converts an apply-time failure into a plan-time one; no previously-working configuration is affected.
+- **Policy `conditions` / `group_by` use `jsontypes.Normalized`** — these attributes are now semantically compared as JSON rather than as raw strings, so key ordering and whitespace differences between the config and the API response no longer surface as permanent plan diffs.
+
 ## [0.2.29] - 2026-07-07
 
 ### Added
@@ -333,7 +362,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace deletion may be blocked by existing resources
 - Prompt template updates create new versions (use makeDefault to promote)
 
-[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.29...HEAD
+[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.32...HEAD
+[0.2.32]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.31...v0.2.32
+[0.2.31]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.30...v0.2.31
+[0.2.30]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.29...v0.2.30
 [0.2.29]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.28...v0.2.29
 [0.2.28]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.27...v0.2.28
 [0.2.27]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.26...v0.2.27
