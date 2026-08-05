@@ -1,28 +1,42 @@
 package provider
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
+
+// testAccPreCheckOrganisationDefaults gates tests that overwrite the
+// organisation's real default guardrails.
+//
+// portkey_organisation_defaults is a singleton over shared organisation state —
+// there is no per-test isolation the way workspace defaults get from a
+// throwaway workspace — and destroy clears both lists. Without this opt-in the
+// weekly acceptance-test workflow (.github/workflows/acc-tests.yml runs
+// `make testacc` every Monday) would silently wipe the default guardrails of
+// whatever organisation its API key belongs to. Avoid running these in parallel
+// with anything else that touches organisation defaults.
+func testAccPreCheckOrganisationDefaults(t *testing.T) {
+	if os.Getenv("PORTKEY_TEST_ORG_DEFAULTS") == "" {
+		t.Skip("PORTKEY_TEST_ORG_DEFAULTS must be set to run tests that overwrite the organisation's real default guardrails")
+	}
+	testAccPreCheck(t)
+}
 
 // TestAccOrganisationDefaultsResource_lifecycle exercises organisation-scoped
 // guardrails → organisation_defaults.
-//
-// NOTE: portkey_organisation_defaults is a singleton over shared organisation
-// state — there is no per-test isolation the way workspace defaults get from a
-// throwaway workspace. This test therefore writes to the test organisation's
-// real defaults, and the final destroy clears both lists. Do not run it against
-// an organisation whose defaults matter, and avoid running it in parallel with
-// anything else that touches organisation defaults.
 func TestAccOrganisationDefaultsResource_lifecycle(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-orgdef")
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:                 func() { testAccPreCheck(t) },
+		PreCheck:                 func() { testAccPreCheckOrganisationDefaults(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Step 1: create org-scoped guardrails and attach both lists.
@@ -60,6 +74,97 @@ func TestAccOrganisationDefaultsResource_lifecycle(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestAccOrganisationDefaultsResource_adoptsOmittedList covers the path
+// _lifecycle cannot: managing only one list while the organisation already has
+// guardrails of the other kind attached out-of-band (e.g. through the Portkey
+// UI). This is the adoption scenario the resource documents as supported.
+//
+// Regression test. While the guardrail lists were Optional without Computed,
+// Create wrote the preserved API value into state against a planned null and
+// the apply failed with "Provider produced inconsistent result after apply".
+func TestAccOrganisationDefaultsResource_adoptsOmittedList(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-orgdef-adopt")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheckOrganisationDefaults(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Step 1: create the guardrails only, so they exist in the
+			// organisation before anything is attached to its defaults.
+			{
+				Config: testAccOrganisationDefaultsGuardrails(rName),
+			},
+			// Step 2: attach the output guardrail outside Terraform, then let
+			// Terraform create organisation_defaults managing input only. The
+			// PUT must omit output_guardrails, and state must adopt what the
+			// API preserved rather than reset it to null.
+			{
+				PreConfig: func() {
+					testAccAttachOrganisationOutputGuardrail(t, rName+"-out")
+				},
+				Config: testAccOrganisationDefaultsConfigInputOnly(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_organisation_defaults.test", "input_guardrails.#", "1"),
+					resource.TestCheckResourceAttrPair(
+						"portkey_organisation_defaults.test", "input_guardrails.0",
+						"portkey_guardrail.org_input", "slug",
+					),
+					resource.TestCheckResourceAttr("portkey_organisation_defaults.test", "output_guardrails.#", "1"),
+					resource.TestCheckResourceAttrPair(
+						"portkey_organisation_defaults.test", "output_guardrails.0",
+						"portkey_guardrail.org_output", "slug",
+					),
+				),
+			},
+			// Step 3: the adopted list must be stable — an omitted attribute
+			// must not plan to clear what it preserved.
+			{
+				Config:   testAccOrganisationDefaultsConfigInputOnly(rName),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+// testAccAttachOrganisationOutputGuardrail attaches an existing guardrail to the
+// organisation's output defaults without going through Terraform, simulating a
+// guardrail attached through the Portkey UI.
+func testAccAttachOrganisationOutputGuardrail(t *testing.T, guardrailName string) {
+	t.Helper()
+
+	c, err := newTestClient()
+	if err != nil {
+		t.Fatalf("newTestClient: %v", err)
+	}
+
+	ctx := context.Background()
+	guardrails, err := c.ListGuardrails(ctx, "")
+	if err != nil {
+		t.Fatalf("ListGuardrails: %v", err)
+	}
+
+	var slug string
+	for _, g := range guardrails {
+		if g.Name == guardrailName {
+			slug = g.Slug
+			break
+		}
+	}
+	if slug == "" {
+		t.Fatalf("guardrail %q not found; cannot simulate an out-of-band attachment", guardrailName)
+	}
+
+	encoded, err := json.Marshal([]string{slug})
+	if err != nil {
+		t.Fatalf("marshal guardrail slug: %v", err)
+	}
+	if _, err := c.UpdateOrganisationDefaults(ctx, client.UpdateOrganisationDefaultsRequest{
+		OutputGuardrails: encoded,
+	}); err != nil {
+		t.Fatalf("UpdateOrganisationDefaults: %v", err)
+	}
 }
 
 // TestAccOrganisationDefaultsResource_requiresOneList verifies the plan-time
@@ -146,6 +251,23 @@ func testAccOrganisationDefaultsConfigAttached(name string) string {
 resource "portkey_organisation_defaults" "test" {
   input_guardrails  = [portkey_guardrail.org_input.slug]
   output_guardrails = [portkey_guardrail.org_output.slug]
+}
+`
+}
+
+// testAccOrganisationDefaultsConfigInputOnly manages input_guardrails only,
+// leaving output_guardrails to whatever is attached out-of-band.
+//
+// depends_on is required for teardown: with output_guardrails absent from the
+// config there is no reference to org_output, so Terraform would otherwise
+// delete that guardrail in parallel with clearing the defaults and hit
+// `AB01 Guardrail is being used in organisation defaults`.
+func testAccOrganisationDefaultsConfigInputOnly(name string) string {
+	return testAccOrganisationDefaultsGuardrails(name) + `
+resource "portkey_organisation_defaults" "test" {
+  input_guardrails = [portkey_guardrail.org_input.slug]
+
+  depends_on = [portkey_guardrail.org_output]
 }
 `
 }

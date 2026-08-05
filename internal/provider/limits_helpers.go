@@ -276,25 +276,25 @@ func marshalWorkspaceLimitsForUpdate(ctx context.Context, plan *workspaceResourc
 }
 
 // marshalGuardrailsForUpdate converts a list of guardrail id/slug strings
-// into a json.RawMessage suitable for UpdateWorkspaceDefaults. Tri-state:
+// into a json.RawMessage suitable for UpdateWorkspaceDefaults:
 //   - cfg is non-null (empty or populated) → marshaled array (empty clears).
-//   - cfg is null and state is null       → nil (omit field, no change).
-//   - cfg is null and state is non-null   → marshaled `[]` (clear guardrails).
+//   - cfg is null or unknown               → nil (omit field, no change).
+//
+// An omitted attribute always means "Terraform does not manage this list",
+// on update as well as create, so guardrails attached out-of-band (e.g. via
+// the Portkey UI) survive. Clearing requires an explicit `[]`. Returning `[]`
+// here for a null config would both destroy those guardrails and contradict
+// the planned value under Optional+Computed, which Terraform rejects as
+// "Provider produced inconsistent result after apply".
 //
 // We prefer sending `[]` over JSONNull because the backend's update handler
 // treats `undefined` as "no change" and any provided value (including `[]`
 // or `null`) enters the guardrail-update code path, which normalizes both
 // null and [] to an empty list on write.
-func marshalGuardrailsForUpdate(ctx context.Context, cfg types.List, state types.List) (json.RawMessage, diag.Diagnostics) {
+func marshalGuardrailsForUpdate(ctx context.Context, cfg types.List) (json.RawMessage, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	if cfg.IsUnknown() {
+	if cfg.IsNull() || cfg.IsUnknown() {
 		return nil, diags
-	}
-	if cfg.IsNull() {
-		if state.IsNull() {
-			return nil, diags
-		}
-		return json.RawMessage("[]"), diags
 	}
 	var ids []string
 	diags.Append(cfg.ElementsAs(ctx, &ids, false)...)

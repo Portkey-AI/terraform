@@ -5,9 +5,11 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -66,23 +68,38 @@ func (r *organisationDefaultsResource) Schema(_ context.Context, _ resource.Sche
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			// Optional+Computed: omitting the attribute means "Terraform does
+			// not manage this list", so state adopts whatever the API holds.
+			// Without Computed, the preserve-on-omit behaviour below would
+			// write an API value against a planned null and Terraform would
+			// fail with "Provider produced inconsistent result after apply".
 			"input_guardrails": schema.ListAttribute{
 				Description: "Guardrails applied to inbound requests across the organisation. The API " +
 					"accepts guardrail IDs or slugs but returns both on read, and the provider stores " +
 					"slugs, so prefer `portkey_guardrail.foo.slug` in HCL to avoid a permanent plan diff. " +
 					"Only organisation-scoped guardrails (created without `workspace_id`) are accepted. " +
-					"Setting to `[]` clears all input guardrails.",
+					"Omitting this attribute leaves any existing input guardrails untouched; " +
+					"set it to `[]` to clear them.",
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"output_guardrails": schema.ListAttribute{
 				Description: "Guardrails applied to model responses across the organisation. The API " +
 					"accepts guardrail IDs or slugs but returns both on read, and the provider stores " +
 					"slugs, so prefer `portkey_guardrail.foo.slug` in HCL to avoid a permanent plan diff. " +
 					"Only organisation-scoped guardrails (created without `workspace_id`) are accepted. " +
-					"Setting to `[]` clears all output guardrails.",
+					"Omitting this attribute leaves any existing output guardrails untouched; " +
+					"set it to `[]` to clear them.",
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -123,13 +140,21 @@ func (r *organisationDefaultsResource) Create(ctx context.Context, req resource.
 		return
 	}
 
-	// On Create, prior state is empty. marshalGuardrailsForUpdate returns nil
-	// (omit field) for both null-config and unknown, so guardrails already
-	// attached out-of-band (e.g. via the Portkey UI) are preserved unless the
-	// user explicitly asked for a value.
-	inRaw, gDiags := marshalGuardrailsForUpdate(ctx, plan.InputGuardrails, types.ListNull(types.StringType))
+	var config organisationDefaultsResourceModel
+	diags = req.Config.Get(ctx, &config)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Read from config, not plan: under Optional+Computed an omitted list is
+	// unknown in the plan but null in the config. marshalGuardrailsForUpdate
+	// returns nil (omit field) for both, so guardrails already attached
+	// out-of-band (e.g. via the Portkey UI) are preserved unless the user
+	// explicitly asked for a value.
+	inRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.InputGuardrails)
 	resp.Diagnostics.Append(gDiags...)
-	outRaw, gDiags := marshalGuardrailsForUpdate(ctx, plan.OutputGuardrails, types.ListNull(types.StringType))
+	outRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.OutputGuardrails)
 	resp.Diagnostics.Append(gDiags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -148,7 +173,10 @@ func (r *organisationDefaultsResource) Create(ctx context.Context, req resource.
 	}
 
 	plan.ID = types.StringValue(organisationDefaultsSingletonID)
-	applyOrganisationDefaultsFromAPI(&plan, defaults, plan.InputGuardrails, plan.OutputGuardrails)
+	resp.Diagnostics.Append(applyOrganisationDefaultsFromAPI(&plan, defaults, config.InputGuardrails, config.OutputGuardrails)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -205,16 +233,9 @@ func (r *organisationDefaultsResource) Update(ctx context.Context, req resource.
 		return
 	}
 
-	var state organisationDefaultsResourceModel
-	diags = req.State.Get(ctx, &state)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	inRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.InputGuardrails, state.InputGuardrails)
+	inRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.InputGuardrails)
 	resp.Diagnostics.Append(gDiags...)
-	outRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.OutputGuardrails, state.OutputGuardrails)
+	outRaw, gDiags := marshalGuardrailsForUpdate(ctx, config.OutputGuardrails)
 	resp.Diagnostics.Append(gDiags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -233,7 +254,10 @@ func (r *organisationDefaultsResource) Update(ctx context.Context, req resource.
 	}
 
 	plan.ID = types.StringValue(organisationDefaultsSingletonID)
-	applyOrganisationDefaultsFromAPI(&plan, defaults, config.InputGuardrails, config.OutputGuardrails)
+	resp.Diagnostics.Append(applyOrganisationDefaultsFromAPI(&plan, defaults, config.InputGuardrails, config.OutputGuardrails)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -276,14 +300,21 @@ func (r *organisationDefaultsResource) ImportState(ctx context.Context, _ resour
 // error with "Provider produced inconsistent result after apply"). When config
 // is [] we mirror an empty list so state matches the user's HCL even if the
 // API happened to return nothing.
-func applyOrganisationDefaultsFromAPI(plan *organisationDefaultsResourceModel, defaults *client.OrganisationDefaults, inputCfg, outputCfg types.List) {
+func applyOrganisationDefaultsFromAPI(plan *organisationDefaultsResourceModel, defaults *client.OrganisationDefaults, inputCfg, outputCfg types.List) diag.Diagnostics {
+	var diags diag.Diagnostics
 	if defaults == nil {
 		plan.InputGuardrails = coalesceListForConfig(inputCfg, types.ListNull(types.StringType))
 		plan.OutputGuardrails = coalesceListForConfig(outputCfg, types.ListNull(types.StringType))
-		return
+		return diags
 	}
-	inList, _ := organisationGuardrailRefsToList(defaults.InputGuardrails)
-	outList, _ := organisationGuardrailRefsToList(defaults.OutputGuardrails)
+	inList, d := organisationGuardrailRefsToList(defaults.InputGuardrails)
+	diags.Append(d...)
+	outList, d := organisationGuardrailRefsToList(defaults.OutputGuardrails)
+	diags.Append(d...)
+	if diags.HasError() {
+		return diags
+	}
 	plan.InputGuardrails = coalesceListForConfig(inputCfg, inList)
 	plan.OutputGuardrails = coalesceListForConfig(outputCfg, outList)
+	return diags
 }

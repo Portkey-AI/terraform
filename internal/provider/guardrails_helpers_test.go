@@ -11,39 +11,30 @@ import (
 
 func TestMarshalGuardrailsForUpdate(t *testing.T) {
 	ctx := context.Background()
-	nullList := types.ListNull(types.StringType)
-	nonEmptyState := types.ListValueMust(types.StringType, []attr.Value{types.StringValue("g-existing")})
 
 	cases := []struct {
 		name    string
 		cfg     types.List
-		state   types.List
 		want    string
 		wantNil bool
 	}{
 		{
 			name:    "unknown cfg omits field",
 			cfg:     types.ListUnknown(types.StringType),
-			state:   nullList,
 			wantNil: true,
 		},
 		{
-			name:    "null cfg + null state omits field",
-			cfg:     nullList,
-			state:   nullList,
+			// An omitted attribute means "not managed by Terraform", so the
+			// field is omitted regardless of what prior state held. Returning
+			// [] here would destroy guardrails attached out-of-band.
+			name:    "null cfg omits field",
+			cfg:     types.ListNull(types.StringType),
 			wantNil: true,
 		},
 		{
-			name:  "null cfg + populated state clears with []",
-			cfg:   nullList,
-			state: nonEmptyState,
-			want:  "[]",
-		},
-		{
-			name:  "empty cfg clears with []",
-			cfg:   types.ListValueMust(types.StringType, []attr.Value{}),
-			state: nonEmptyState,
-			want:  "[]",
+			name: "empty cfg clears with []",
+			cfg:  types.ListValueMust(types.StringType, []attr.Value{}),
+			want: "[]",
 		},
 		{
 			name: "populated cfg marshals array",
@@ -51,14 +42,13 @@ func TestMarshalGuardrailsForUpdate(t *testing.T) {
 				types.StringValue("g-1"),
 				types.StringValue("g-2"),
 			}),
-			state: nullList,
-			want:  `["g-1","g-2"]`,
+			want: `["g-1","g-2"]`,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, diags := marshalGuardrailsForUpdate(ctx, tc.cfg, tc.state)
+			got, diags := marshalGuardrailsForUpdate(ctx, tc.cfg)
 			if diags.HasError() {
 				t.Fatalf("unexpected diags: %v", diags)
 			}

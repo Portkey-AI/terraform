@@ -42,10 +42,11 @@ resource "portkey_organisation_defaults" "this" {
 
 ~> **Note:** At least one of `input_guardrails` or `output_guardrails` must be set. The API rejects a write that carries neither, so the provider enforces this at plan time.
 
-~> **Note:** Setting either list to `[]` **always** clears all attached guardrails of that kind. Omitting the attribute, however, behaves differently on create versus update (see below).
+~> **Note:** Omitting a list means Terraform does not manage it, while setting it to `[]` **always** clears every attached guardrail of that kind.
 
-- **On create** (including the first `apply` when adopting this resource against an organisation that already has defaults — for example, ones attached through the Portkey UI), an omitted attribute is **not** sent to the API, so any existing guardrails of that kind are **preserved**, not cleared. To clear on create, set the attribute explicitly to `[]`.
-- **On update**, removing an attribute you previously managed **clears** that kind (it is treated as an explicit removal). If the attribute was never set, omitting it stays a no-op.
+An omitted attribute is never sent to the API, so guardrails of that kind attached outside Terraform — for example through the Portkey UI — are **preserved**, and Terraform adopts whatever the API reports into state. This holds uniformly on create and on update: removing an attribute you previously managed leaves those guardrails in place rather than clearing them. It is what makes it safe to adopt this resource against an organisation that already has defaults, and to manage only one of the two lists.
+
+~> **Note:** Because an omitted list is not in the configuration, Terraform has no dependency edge from this resource to the guardrails in it. If a `portkey_guardrail` you manage is attached to a list you do not manage, `terraform destroy` may try to delete the guardrail before the defaults are cleared and fail with `AB01 Guardrail is being used in organisation defaults`. Re-running the destroy succeeds. To get a proper ordering guarantee, reference the guardrail in the list so Terraform can see the dependency.
 
 Destroying the resource clears both lists via the update endpoint; there is no separate delete endpoint for organisation defaults.
 
@@ -57,8 +58,8 @@ The Admin API key must carry the `organisation_settings.read` and `organisation_
 
 ### Optional
 
-- `input_guardrails` (List of String) Guardrails applied to inbound requests across the organisation, as a list of guardrail slugs (or IDs — the API accepts both). Prefer `portkey_guardrail.foo.slug` to avoid a permanent plan diff. Only organisation-scoped guardrails are accepted. Setting to `[]` clears all input guardrails.
-- `output_guardrails` (List of String) Guardrails applied to model responses across the organisation, as a list of guardrail slugs (or IDs — the API accepts both). Prefer `portkey_guardrail.foo.slug` to avoid a permanent plan diff. Only organisation-scoped guardrails are accepted. Setting to `[]` clears all output guardrails.
+- `input_guardrails` (List of String, Computed) Guardrails applied to inbound requests across the organisation, as a list of guardrail slugs (or IDs — the API accepts both). Prefer `portkey_guardrail.foo.slug` to avoid a permanent plan diff. Only organisation-scoped guardrails are accepted. Omitting this attribute leaves any existing input guardrails untouched and adopts them into state; set it to `[]` to clear them.
+- `output_guardrails` (List of String, Computed) Guardrails applied to model responses across the organisation, as a list of guardrail slugs (or IDs — the API accepts both). Prefer `portkey_guardrail.foo.slug` to avoid a permanent plan diff. Only organisation-scoped guardrails are accepted. Omitting this attribute leaves any existing output guardrails untouched and adopts them into state; set it to `[]` to clear them.
 
 ### Read-Only
 

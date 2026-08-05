@@ -44,10 +44,13 @@ resource "portkey_workspace_defaults" "prod" {
 
 ~> **Note:** Reference guardrails by `slug` for stable plans. The Admin API accepts either guardrail IDs or slugs on write but returns slugs on read (under admin-API-key auth), so state will always contain slugs. Storing `portkey_guardrail.foo.slug` keeps state and HCL in sync; using `portkey_guardrail.foo.id` (a UUID) produces a permanent plan diff.
 
-~> **Note:** Setting either list to `[]` **always** clears all attached guardrails of that kind. Omitting the attribute, however, behaves differently on create versus update (see below).
+~> **Note:** Omitting a list means Terraform does not manage it, while setting it to `[]` **always** clears every attached guardrail of that kind.
 
-- **On create** (including the first `apply` when adopting this resource against a workspace that already has guardrails — for example, ones attached through the Portkey UI), an omitted attribute is **not** sent to the API, so any existing guardrails of that kind are **preserved**, not cleared. To clear on create, set the attribute explicitly to `[]`.
-- **On update**, removing an attribute you previously managed **clears** that kind (it is treated as an explicit removal). If the attribute was never set, omitting it stays a no-op.
+An omitted attribute is never sent to the API, so guardrails of that kind attached outside Terraform — for example through the Portkey UI — are **preserved**, and Terraform adopts whatever the API reports into state. This holds uniformly on create and on update: removing an attribute you previously managed leaves those guardrails in place rather than clearing them. It is what makes it safe to adopt this resource against a workspace that already has guardrails, and to manage only one of the two lists.
+
+~> **Breaking change in this behaviour:** before this change, removing a previously-managed attribute on update cleared that kind. If you relied on removal to clear guardrails, set the attribute to `[]` explicitly instead.
+
+~> **Note:** Because an omitted list is not in the configuration, Terraform has no dependency edge from this resource to the guardrails in it. If a `portkey_guardrail` you manage is attached to a list you do not manage, `terraform destroy` may try to delete the guardrail before the defaults are cleared and fail with `AB01 Guardrail is being used in ...`. Re-running the destroy succeeds. To get a proper ordering guarantee, reference the guardrail in the list so Terraform can see the dependency.
 
 Destroying the resource clears both lists via the workspace update endpoint; there is no separate delete endpoint for workspace defaults.
 
@@ -59,8 +62,8 @@ Destroying the resource clears both lists via the workspace update endpoint; the
 
 ### Optional
 
-- `input_guardrails` (List of String) Guardrails applied to inbound requests, as a list of guardrail slugs (or IDs — the API accepts both). The API returns slugs on read under admin-API-key auth, so prefer `portkey_guardrail.foo.slug` in HCL to avoid a permanent plan diff. Setting to `[]` clears all input guardrails.
-- `output_guardrails` (List of String) Guardrails applied to model responses, as a list of guardrail slugs (or IDs — the API accepts both). The API returns slugs on read under admin-API-key auth, so prefer `portkey_guardrail.foo.slug` in HCL to avoid a permanent plan diff. Setting to `[]` clears all output guardrails.
+- `input_guardrails` (List of String, Computed) Guardrails applied to inbound requests, as a list of guardrail slugs (or IDs — the API accepts both). The API returns slugs on read under admin-API-key auth, so prefer `portkey_guardrail.foo.slug` in HCL to avoid a permanent plan diff. Omitting this attribute leaves any existing input guardrails untouched and adopts them into state; set it to `[]` to clear them.
+- `output_guardrails` (List of String, Computed) Guardrails applied to model responses, as a list of guardrail slugs (or IDs — the API accepts both). The API returns slugs on read under admin-API-key auth, so prefer `portkey_guardrail.foo.slug` in HCL to avoid a permanent plan diff. Omitting this attribute leaves any existing output guardrails untouched and adopts them into state; set it to `[]` to clear them.
 
 ### Read-Only
 
