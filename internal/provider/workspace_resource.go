@@ -591,7 +591,7 @@ func (r *workspaceResource) deleteDependentResources(ctx context.Context, worksp
 
 	// 1. Delete Prompts
 	tflog.Info(ctx, "Deleting dependent prompts", map[string]interface{}{"workspace_id": workspaceID})
-	prompts, err := r.client.ListPrompts(ctx, workspaceID, "")
+	prompts, err := r.client.ListAllPrompts(ctx, workspaceID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("failed to list prompts: %s", err))
 	} else {
@@ -630,7 +630,7 @@ func (r *workspaceResource) deleteDependentResources(ctx context.Context, worksp
 
 	// 4. Delete Guardrails
 	tflog.Info(ctx, "Deleting dependent guardrails", map[string]interface{}{"workspace_id": workspaceID})
-	guardrails, err := r.client.ListGuardrails(ctx, workspaceID)
+	guardrails, err := r.client.ListAllGuardrails(ctx, workspaceID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("failed to list guardrails: %s", err))
 	} else {
@@ -643,7 +643,7 @@ func (r *workspaceResource) deleteDependentResources(ctx context.Context, worksp
 
 	// 5. Delete Virtual Keys / Providers
 	tflog.Info(ctx, "Deleting dependent virtual keys (providers)", map[string]interface{}{"workspace_id": workspaceID})
-	providers, err := r.client.ListProviders(ctx, workspaceID)
+	providers, err := r.client.ListAllProviders(ctx, workspaceID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("failed to list providers: %s", err))
 	} else {

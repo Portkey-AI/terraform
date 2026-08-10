@@ -1188,6 +1188,47 @@ func (c *Client) ListProviders(ctx context.Context, workspaceID string) ([]Provi
 	return response.Data, nil
 }
 
+// ListAllProviders fetches all providers (virtual keys) for a workspace by
+// paginating through all pages. While the API returns all results when
+// pagination params are omitted, using explicit pagination is more resilient
+// to future backend changes.
+func (c *Client) ListAllProviders(ctx context.Context, workspaceID string) ([]Provider, error) {
+	const pageSize = 50
+	var all []Provider
+
+	for page := 0; ; page++ {
+		params := []string{
+			fmt.Sprintf("current_page=%d", page),
+			fmt.Sprintf("page_size=%d", pageSize),
+		}
+		if workspaceID != "" {
+			params = append(params, "workspace_id="+workspaceID)
+		}
+		path := "/providers?" + strings.Join(params, "&")
+
+		respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var response struct {
+			Data       []Provider `json:"data"`
+			TotalCount int        `json:"total_count"`
+		}
+		if err := json.Unmarshal(respBody, &response); err != nil {
+			return nil, fmt.Errorf("error unmarshaling response: %w", err)
+		}
+
+		all = append(all, response.Data...)
+
+		if len(all) >= response.TotalCount || len(response.Data) < pageSize {
+			break
+		}
+	}
+
+	return all, nil
+}
+
 // UpdateProvider updates a provider
 func (c *Client) UpdateProvider(ctx context.Context, id string, req UpdateProviderRequest) (*Provider, error) {
 	_, err := c.doRequest(ctx, http.MethodPut, "/providers/"+id, req)
@@ -1509,6 +1550,47 @@ func (c *Client) ListPrompts(ctx context.Context, workspaceID, collectionID stri
 	return response.Data, nil
 }
 
+// ListAllPrompts fetches all prompts for a workspace by paginating through
+// all pages. While the API returns all results when pagination params are
+// omitted, using explicit pagination is more resilient to future backend
+// changes.
+func (c *Client) ListAllPrompts(ctx context.Context, workspaceID string) ([]Prompt, error) {
+	const pageSize = 100
+	var all []Prompt
+
+	for page := 0; ; page++ {
+		params := []string{
+			fmt.Sprintf("current_page=%d", page),
+			fmt.Sprintf("page_size=%d", pageSize),
+		}
+		if workspaceID != "" {
+			params = append(params, "workspace_id="+workspaceID)
+		}
+		path := "/prompts?" + strings.Join(params, "&")
+
+		respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var response struct {
+			Data  []Prompt `json:"data"`
+			Total int      `json:"total"`
+		}
+		if err := json.Unmarshal(respBody, &response); err != nil {
+			return nil, fmt.Errorf("error unmarshaling response: %w", err)
+		}
+
+		all = append(all, response.Data...)
+
+		if len(all) >= response.Total || len(response.Data) < pageSize {
+			break
+		}
+	}
+
+	return all, nil
+}
+
 // UpdatePrompt updates a prompt
 func (c *Client) UpdatePrompt(ctx context.Context, slugOrID string, req UpdatePromptRequest) (*UpdatePromptResponse, error) {
 	respBody, err := c.doRequest(ctx, http.MethodPut, "/prompts/"+slugOrID, req)
@@ -1812,6 +1894,42 @@ func (c *Client) ListGuardrails(ctx context.Context, workspaceID string) ([]Guar
 	}
 
 	return response.Data, nil
+}
+
+// ListAllGuardrails fetches all guardrails for a workspace by paginating
+// through all pages. The guardrails API always paginates (default page_size=100),
+// so callers that need the complete set must iterate pages.
+func (c *Client) ListAllGuardrails(ctx context.Context, workspaceID string) ([]Guardrail, error) {
+	const pageSize = 100
+	var all []Guardrail
+
+	for page := 0; ; page++ {
+		path := fmt.Sprintf("/guardrails?current_page=%d&page_size=%d", page, pageSize)
+		if workspaceID != "" {
+			path += "&workspace_id=" + workspaceID
+		}
+
+		respBody, err := c.doRequest(ctx, http.MethodGet, path, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var response struct {
+			Data  []Guardrail `json:"data"`
+			Total int         `json:"total"`
+		}
+		if err := json.Unmarshal(respBody, &response); err != nil {
+			return nil, fmt.Errorf("error unmarshaling response: %w", err)
+		}
+
+		all = append(all, response.Data...)
+
+		if len(all) >= response.Total || len(response.Data) < pageSize {
+			break
+		}
+	}
+
+	return all, nil
 }
 
 // UpdateGuardrail updates a guardrail
