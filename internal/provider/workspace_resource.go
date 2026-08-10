@@ -686,7 +686,10 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 
 	// Delete existing workspace (API requires name in body as confirmation).
 	// State stores the clean name (without icon prefix), which is what the API expects.
-	err := r.client.DeleteWorkspace(ctx, state.ID.ValueString(), state.Name.ValueString())
+	wsID := state.ID.ValueString()
+	wsName := state.Name.ValueString()
+
+	err := r.client.DeleteWorkspace(ctx, wsID, wsName)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Deleting Portkey Workspace",
