@@ -377,34 +377,13 @@ func (c *Client) UpdateWorkspace(ctx context.Context, id string, req UpdateWorks
 	return workspace, nil
 }
 
-// DeleteWorkspaceRequest represents the request to delete a workspace.
-//
-// ForceDelete instructs the Portkey Admin API to cascade-delete the
-// workspace's dependent resources (providers/virtual-keys, configs,
-// workspace API keys) before deleting the workspace itself. Without
-// it, the API returns 409 AB07 ("Unable to delete. Please ensure that
-// all Virtual Keys are deleted") if any dependent exists, forcing
-// callers to enumerate and DELETE every dependent manually before
-// they can apply a workspace destroy.
-type DeleteWorkspaceRequest struct {
-	Name        string `json:"name"`
-	ForceDelete bool   `json:"force_delete,omitempty"`
-}
-
-// DeleteWorkspace deletes a workspace and cascades through its dependents.
-//
-// Sets force_delete=true so providers/virtual-keys, configs, and
-// workspace API keys are removed atomically with the workspace. Without
-// this, terraform destroy on a workspace with any dependent fails
-// partway through with 409 AB07, leaving the operator to manually
-// clean up every dependent before retrying -- defeating the purpose of
-// declarative state management.
+// DeleteWorkspace deletes a workspace. The API requires the workspace name
+// in the request body as a confirmation mechanism.
 func (c *Client) DeleteWorkspace(ctx context.Context, id string, name string) error {
-	req := DeleteWorkspaceRequest{
-		Name:        name,
-		ForceDelete: true,
-	}
-	_, err := c.doRequest(ctx, http.MethodDelete, "/admin/workspaces/"+id, req)
+	body := struct {
+		Name string `json:"name"`
+	}{Name: name}
+	_, err := c.doRequest(ctx, http.MethodDelete, "/admin/workspaces/"+id, body)
 	return err
 }
 
