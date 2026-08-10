@@ -1,11 +1,15 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
 
 func TestAccWorkspaceResource_basic(t *testing.T) {
@@ -683,8 +687,11 @@ resource "portkey_workspace" "test" {
 }
 
 // TestAccWorkspaceResource_forceDelete verifies that setting
-// force_delete = true allows a workspace with dependent resources
-// (e.g. a virtual key / provider) to be destroyed without manual cleanup.
+// force_delete = true allows a workspace with out-of-band dependent resources
+// to be destroyed without manual cleanup. The dependent resource is created
+// directly via the API (not as a Terraform resource), so Terraform's
+// dependency graph won't destroy it first — this forces the provider's
+// deleteDependentResources logic to actually run.
 func TestAccWorkspaceResource_forceDelete(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-cascade")
 	integrationID := getTestIntegrationID()
@@ -699,21 +706,61 @@ func TestAccWorkspaceResource_forceDelete(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccWorkspaceWithDependentResources(rName, integrationID),
+				Config: testAccWorkspaceForceDelete(rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("portkey_workspace.cascade", "id"),
 					resource.TestCheckResourceAttr("portkey_workspace.cascade", "name", rName),
 					resource.TestCheckResourceAttr("portkey_workspace.cascade", "force_delete", "true"),
-					resource.TestCheckResourceAttrSet("portkey_provider.dep", "id"),
+					// Create an out-of-band provider via the API that Terraform
+					// doesn't know about. This blocks workspace deletion unless
+					// deleteDependentResources cleans it up.
+					createOutOfBandProvider(rName+"-oob-provider", integrationID),
 				),
 			},
-			// Destroy is implicit — the test succeeds only if terraform destroy
-			// removes the workspace despite the provider resource existing in it.
+			// Destroy is implicit — the test succeeds only if the provider's
+			// deleteDependentResources removes the out-of-band provider before
+			// deleting the workspace.
 		},
 	})
 }
 
-func testAccWorkspaceWithDependentResources(name, integrationID string) string {
+// createOutOfBandProvider returns a check function that creates a provider
+// (virtual key) directly via the Portkey API in the given workspace. The
+// resource is invisible to Terraform state, so only deleteDependentResources
+// can clean it up during workspace destruction.
+func createOutOfBandProvider(name, integrationID string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources["portkey_workspace.cascade"]
+		if !ok {
+			return fmt.Errorf("portkey_workspace.cascade not found in state")
+		}
+		workspaceID := rs.Primary.ID
+
+		baseURL := os.Getenv("PORTKEY_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://api.portkey.ai/v1"
+		}
+		apiKey := os.Getenv("PORTKEY_API_KEY")
+
+		c, err := client.NewClient(baseURL, apiKey)
+		if err != nil {
+			return fmt.Errorf("failed to create API client: %w", err)
+		}
+
+		_, err = c.CreateProvider(context.Background(), client.CreateProviderRequest{
+			Name:          name,
+			WorkspaceID:   workspaceID,
+			IntegrationID: integrationID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create out-of-band provider: %w", err)
+		}
+
+		return nil
+	}
+}
+
+func testAccWorkspaceForceDelete(name string) string {
 	return fmt.Sprintf(`
 provider "portkey" {}
 
@@ -722,11 +769,5 @@ resource "portkey_workspace" "cascade" {
   description  = "Workspace for cascade delete test"
   force_delete = true
 }
-
-resource "portkey_provider" "dep" {
-  name           = "%[1]s-provider"
-  workspace_id   = portkey_workspace.cascade.id
-  integration_id = %[2]q
-}
-`, name, integrationID)
+`, name)
 }
