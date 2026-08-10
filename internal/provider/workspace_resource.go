@@ -39,16 +39,16 @@ type workspaceResource struct {
 
 // workspaceResourceModel maps the resource schema data.
 type workspaceResourceModel struct {
-	ID                       types.String `tfsdk:"id"`
-	Name                     types.String `tfsdk:"name"`
-	Icon                     types.String `tfsdk:"icon"`
-	Description              types.String `tfsdk:"description"`
-	UsageLimits              types.List   `tfsdk:"usage_limits"`
-	RateLimits               types.List   `tfsdk:"rate_limits"`
-	Metadata                 types.Map    `tfsdk:"metadata"`
-	DeleteDependentResources types.Bool   `tfsdk:"delete_dependent_resources"`
-	CreatedAt                types.String `tfsdk:"created_at"`
-	UpdatedAt                types.String `tfsdk:"updated_at"`
+	ID          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	Icon        types.String `tfsdk:"icon"`
+	Description types.String `tfsdk:"description"`
+	UsageLimits types.List   `tfsdk:"usage_limits"`
+	RateLimits  types.List   `tfsdk:"rate_limits"`
+	Metadata    types.Map    `tfsdk:"metadata"`
+	ForceDelete types.Bool   `tfsdk:"force_delete"`
+	CreatedAt   types.String `tfsdk:"created_at"`
+	UpdatedAt   types.String `tfsdk:"updated_at"`
 }
 
 // stripIconPrefix removes the icon emoji prefix from a workspace name.
@@ -158,11 +158,11 @@ func (r *workspaceResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Optional:    true,
 				ElementType: types.StringType,
 			},
-			"delete_dependent_resources": schema.BoolAttribute{
-				Description: "If true, automatically deletes all dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) before deleting the workspace. This is a Terraform-only convenience flag; the Portkey API does not support cascade deletion natively. Default: false.",
+			"force_delete": schema.BoolAttribute{
+				Description: "If true, automatically deletes all dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) before deleting the workspace. This is a Terraform-only convenience flag; the Portkey API does not support cascade deletion natively. Default: true.",
 				Optional:    true,
 				Computed:    true,
-				Default:     booldefault.StaticBool(false),
+				Default:     booldefault.StaticBool(true),
 			},
 			"created_at": schema.StringAttribute{
 				Description: "Timestamp when the workspace was created.",
@@ -670,9 +670,9 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 
-	// If delete_dependent_resources is true, remove all blocking resources first.
-	if state.DeleteDependentResources.ValueBool() {
-		tflog.Info(ctx, "delete_dependent_resources is true; removing dependent resources before workspace deletion", map[string]interface{}{
+	// If force_delete is true, remove all blocking resources first.
+	if state.ForceDelete.ValueBool() {
+		tflog.Info(ctx, "force_delete is true; removing dependent resources before workspace deletion", map[string]interface{}{
 			"workspace_id": state.ID.ValueString(),
 		})
 		if err := r.deleteDependentResources(ctx, state.ID.ValueString()); err != nil {

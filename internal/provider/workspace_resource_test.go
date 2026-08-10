@@ -31,7 +31,7 @@ func TestAccWorkspaceResource_basic(t *testing.T) {
 				ResourceName:            "portkey_workspace.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "delete_dependent_resources"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "force_delete"},
 			},
 			// Update testing
 			{
@@ -163,7 +163,7 @@ func TestAccWorkspaceResource_withMetadata(t *testing.T) {
 				ResourceName:            "portkey_workspace.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "delete_dependent_resources"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "force_delete"},
 			},
 			// Update metadata
 			{
@@ -239,7 +239,7 @@ func TestAccWorkspaceResource_withUsageLimits(t *testing.T) {
 				ResourceName:            "portkey_workspace.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "delete_dependent_resources"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "force_delete"},
 			},
 			// Update usage_limits — changes credit_limit and alert_threshold.
 			// This is the exact path that used to fail with "Provider produced
@@ -509,7 +509,7 @@ func TestAccWorkspaceResource_withIcon(t *testing.T) {
 				ResourceName:            "portkey_workspace.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "icon", "name", "delete_dependent_resources"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "icon", "name", "force_delete"},
 			},
 			// Re-apply config after import — should converge to clean state
 			{
@@ -682,10 +682,10 @@ resource "portkey_workspace" "test" {
 `, name, icon)
 }
 
-// TestAccWorkspaceResource_deleteDependentResources verifies that setting
-// delete_dependent_resources = true allows a workspace with dependent resources
+// TestAccWorkspaceResource_forceDelete verifies that setting
+// force_delete = true allows a workspace with dependent resources
 // (e.g. a virtual key / provider) to be destroyed without manual cleanup.
-func TestAccWorkspaceResource_deleteDependentResources(t *testing.T) {
+func TestAccWorkspaceResource_forceDelete(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-cascade")
 	integrationID := getTestIntegrationID()
 
@@ -703,7 +703,7 @@ func TestAccWorkspaceResource_deleteDependentResources(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("portkey_workspace.cascade", "id"),
 					resource.TestCheckResourceAttr("portkey_workspace.cascade", "name", rName),
-					resource.TestCheckResourceAttr("portkey_workspace.cascade", "delete_dependent_resources", "true"),
+					resource.TestCheckResourceAttr("portkey_workspace.cascade", "force_delete", "true"),
 					resource.TestCheckResourceAttrSet("portkey_provider.dep", "id"),
 				),
 			},
@@ -718,9 +718,9 @@ func testAccWorkspaceWithDependentResources(name, integrationID string) string {
 provider "portkey" {}
 
 resource "portkey_workspace" "cascade" {
-  name                       = %[1]q
-  description                = "Workspace for cascade delete test"
-  delete_dependent_resources = true
+  name         = %[1]q
+  description  = "Workspace for cascade delete test"
+  force_delete = true
 }
 
 resource "portkey_provider" "dep" {
