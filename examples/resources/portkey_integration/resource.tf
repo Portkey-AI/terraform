@@ -118,9 +118,8 @@ resource "portkey_secret_reference" "vertex_sa_vault" {
   secret_key   = "vertex_service_account_json"
 
   vault_kubernetes_auth = {
-    vault_auth_type = "kubernetes"
-    vault_addr      = "https://vault.internal:8200"
-    vault_role      = "portkey-gateway"
+    vault_addr = "https://vault.internal:8200"
+    vault_role = "portkey-gateway"
   }
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
@@ -126,7 +125,3 @@ func TestSecretMappings_NullValueFormatRoundTrip(t *testing.T) {
 		t.Errorf("value_format should be null when API omits it, got %v", vf)
 	}
 }
-
-// Compile-time check to ensure secretMappingAttrTypes remains
-// authoritative for the shape used by state conversion helpers.
-var _ = map[string]attr.Type(secretMappingAttrTypes)
