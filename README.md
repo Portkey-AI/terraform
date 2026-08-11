@@ -303,6 +303,9 @@ Manages a Portkey workspace.
 |----------|------|----------|-------------|
 | `name` | String | Yes | Name of the workspace |
 | `description` | String | No | Description of the workspace |
+| `force_delete` | Boolean | No | Terraform-only convenience flag. Defaults to `true`; when enabled, destroy deletes dependent resources in the workspace before deleting the workspace itself. Set to `false` to let the Portkey API reject deletion when dependencies still exist. |
+
+**Destroy semantics**: `force_delete = true` is the default, including for imported workspaces. On destroy, the provider first removes dependent resources in the workspace before calling the workspace delete endpoint.
 
 **Import**: `terraform import portkey_workspace.example workspace-id`
 
@@ -1461,11 +1464,6 @@ provider "portkey" {
 ```
 
 ## Known Issues
-
-### Workspace Deletion - Virtual Keys Block (API Issue)
-Workspaces may fail to delete with error: `409: Unable to delete. Please ensure that all Virtual Keys are deleted`. This occurs even for newly created workspaces due to auto-provisioned resources on the backend.
-
-**Workaround**: Manually delete all providers/virtual keys in the workspace before destroying.
 
 ### Workspace Deletion - Emoji Names (API Issue)
 Workspaces with emoji characters in the name may fail to delete with error: `Invalid value` for the `name` parameter. The API's DELETE endpoint appears to have stricter validation than create/update endpoints.

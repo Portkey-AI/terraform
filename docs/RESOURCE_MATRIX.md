@@ -1,12 +1,12 @@
 # Resource x Operation Matrix
 
-*Last updated: February 2026*
+*Last updated: August 2026*
 
 ## Summary
 
 | Category | Resources | Data Sources | Test Status |
 |----------|:---------:|:------------:|-------------|
-| Organization | 6 | 4 | ⚠️ Workspace delete blocked |
+| Organization | 6 | 4 | ✅ All passing |
 | AI Gateway | 6 | 12 | ✅ All passing |
 | Governance | 3 | 6 | ✅ All passing |
 | Access Control | 1 | 2 | ✅ All passing |
@@ -19,7 +19,7 @@
 
 | Resource | Create | Read | Update | Delete | Import | API Status | Test Status |
 |----------|:------:|:----:|:------:|:------:|:------:|------------|-------------|
-| `portkey_workspace` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Delete requires name in body | ⚠️ 10 tests, delete blocked by backend |
+| `portkey_workspace` | ✅ | ✅ | ✅ | ✅ | ✅ | Delete requires `{ "name": "..." }` in the body. Provider-side `force_delete` (default `true`) cascades dependent-resource cleanup before delete; `terraform import` seeds `force_delete = true` in state so imported workspaces destroy consistently | ✅ 10 tests, including cascade-delete and import/destroy coverage |
 | `portkey_workspace_defaults` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Default input/output guardrails live on the workspace; written via PUT `/admin/workspaces/{id}` `defaults`. Both lists are `Optional+Computed`: an omitted field is never sent (existing guardrails preserved and adopted into state), `[]` clears. No reset endpoint — Delete clears both lists | ✅ Unit + acc tests |
 | `portkey_organisation_defaults` | ✅ | ✅ | ✅ | ⚠️ | ✅ | Default input/output guardrails for the whole organisation, via `GET`/`PUT /v2/admin/organisation/defaults` (note: `/v2`, not `/v1`). Singleton — the organisation comes from the Admin API key, so there is no `organisation_id` and the import ID is ignored. Requires at least one of the two lists (enforced at plan time); only org-scoped guardrails accepted. Both lists are `Optional+Computed`: an omitted field is never sent (existing guardrails preserved and adopted into state), `[]` clears. No reset endpoint — Delete clears both lists. Lifecycle acc test is env-gated behind `PORTKEY_TEST_ORG_DEFAULTS` because it overwrites shared org state | ✅ Unit (client + helpers) + acc tests |
 | `portkey_workspace_member` | ✅ | ⚠️ | ✅ | ✅ | ✅ | getMember API has issues | Skipped |
@@ -389,24 +389,18 @@ DELETE /secret-references/{id_or_slug}  → Delete; returns {}. Subsequent GET r
 
 ## Known Issues
 
-### 1. Workspace Delete - Virtual Keys Block
-- **Status**: Fixed provider code, but workspaces with resources can't be deleted
-- **Error**: `409: Unable to delete. Please ensure that all Virtual Keys are deleted`
-- **Cause**: Fresh workspaces appear to have auto-provisioned virtual keys
-- **Action**: Report to Portkey backend team
-
-### 2. Workspace Member Get - API Bug
+### 1. Workspace Member Get - API Bug
 - **Status**: Skipped in tests
 - **Error**: getMember endpoint returns incomplete data
 - **Action**: Report to Portkey backend team
 
-### 3. User Update - Same Role Rejection
+### 2. User Update - Same Role Rejection
 - **Status**: Not implemented as resource
 - **Error**: `AB01: Invalid request` when updating to same role
 - **Cause**: API rejects no-op updates
 - **Action**: Provider would need to check if role changed before calling API
 
-### 4. User Invite Update - No Endpoint
+### 3. User Invite Update - No Endpoint
 - **Status**: Not implemented
 - **Error**: `404: Not Found`
 - **Cause**: PUT endpoint doesn't exist
