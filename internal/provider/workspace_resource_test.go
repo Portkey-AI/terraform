@@ -36,7 +36,7 @@ func TestAccWorkspaceResource_basic(t *testing.T) {
 				ResourceName:            "portkey_workspace.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "force_delete"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
 			},
 			// Update testing
 			{
@@ -168,7 +168,7 @@ func TestAccWorkspaceResource_withMetadata(t *testing.T) {
 				ResourceName:            "portkey_workspace.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "force_delete"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
 			},
 			// Update metadata
 			{
@@ -244,7 +244,7 @@ func TestAccWorkspaceResource_withUsageLimits(t *testing.T) {
 				ResourceName:            "portkey_workspace.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "force_delete"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at"},
 			},
 			// Update usage_limits — changes credit_limit and alert_threshold.
 			// This is the exact path that used to fail with "Provider produced
@@ -514,7 +514,7 @@ func TestAccWorkspaceResource_withIcon(t *testing.T) {
 				ResourceName:            "portkey_workspace.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "icon", "name", "force_delete"},
+				ImportStateVerifyIgnore: []string{"created_at", "updated_at", "icon", "name"},
 			},
 			// Re-apply config after import — should converge to clean state
 			{

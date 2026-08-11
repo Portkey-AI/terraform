@@ -701,10 +701,12 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 }
 
 // ImportState imports the resource state.
-// We use simple passthrough — Read will populate all fields. The icon field
-// starts as null in state after import, which triggers backwards-compatible
-// behavior in Read (no name stripping). Users who want icon management add
-// the icon attribute to their config after import.
+// The icon field starts as null in state after import, which triggers
+// backwards-compatible behavior in Read (no name stripping). Users who want
+// icon management add the icon attribute to their config after import.
 func (r *workspaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	// force_delete has no API representation; seed the schema default so an
+	// import-then-destroy cascades like any other workspace.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("force_delete"), true)...)
 }
