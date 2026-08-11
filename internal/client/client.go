@@ -1377,7 +1377,8 @@ func (c *Client) GetConfig(ctx context.Context, slug string) (*Config, error) {
 	return config, nil
 }
 
-// ListConfigs retrieves all configs
+// ListConfigs retrieves all configs. Not paginated: the /configs endpoint
+// ignores page_size and always returns the full set in a single response.
 func (c *Client) ListConfigs(ctx context.Context, workspaceID string) ([]Config, error) {
 	path := "/configs"
 	if workspaceID != "" {
@@ -1723,7 +1724,8 @@ func (c *Client) GetPromptPartial(ctx context.Context, slugOrID string, version 
 	return &partial, nil
 }
 
-// ListPromptPartials retrieves all prompt partials
+// ListPromptPartials retrieves all prompt partials. Not paginated: the
+// /prompts/partials endpoint ignores page_size and always returns the full set.
 func (c *Client) ListPromptPartials(ctx context.Context, workspaceID string) ([]PromptPartial, error) {
 	path := "/prompts/partials"
 	if workspaceID != "" {

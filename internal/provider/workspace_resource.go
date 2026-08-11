@@ -159,7 +159,7 @@ func (r *workspaceResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				ElementType: types.StringType,
 			},
 			"force_delete": schema.BoolAttribute{
-				Description: "If true, automatically deletes all dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) before deleting the workspace. This is a Terraform-only convenience flag; the Portkey API does not support cascade deletion natively. Default: true.",
+				Description: "If true, automatically deletes all dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) before deleting the workspace — including resources created outside Terraform. This is a Terraform-only convenience flag; the Portkey API does not support cascade deletion natively. Default: true.",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(true),
@@ -585,12 +585,13 @@ func (r *workspaceResource) Update(ctx context.Context, req resource.UpdateReque
 // deleteDependentResources lists and deletes all workspace-scoped resources that
 // block workspace deletion. It processes each resource type in order and collects
 // errors without aborting early, so that as many resources as possible are removed
-// in a single pass.
+// in a single pass. On partial failure the caller aborts the workspace delete;
+// the workspace survives with some dependents already gone, and retrying is safe.
 func (r *workspaceResource) deleteDependentResources(ctx context.Context, workspaceID string) error {
 	var errs []string
 
 	// 1. Delete Prompts
-	tflog.Info(ctx, "Deleting dependent prompts", map[string]interface{}{"workspace_id": workspaceID})
+	tflog.Debug(ctx, "Deleting dependent prompts", map[string]interface{}{"workspace_id": workspaceID})
 	prompts, err := r.client.ListAllPrompts(ctx, workspaceID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("failed to list prompts: %s", err))
@@ -603,7 +604,7 @@ func (r *workspaceResource) deleteDependentResources(ctx context.Context, worksp
 	}
 
 	// 2. Delete Prompt Partials
-	tflog.Info(ctx, "Deleting dependent prompt partials", map[string]interface{}{"workspace_id": workspaceID})
+	tflog.Debug(ctx, "Deleting dependent prompt partials", map[string]interface{}{"workspace_id": workspaceID})
 	partials, err := r.client.ListPromptPartials(ctx, workspaceID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("failed to list prompt partials: %s", err))
@@ -616,7 +617,7 @@ func (r *workspaceResource) deleteDependentResources(ctx context.Context, worksp
 	}
 
 	// 3. Delete Configs
-	tflog.Info(ctx, "Deleting dependent configs", map[string]interface{}{"workspace_id": workspaceID})
+	tflog.Debug(ctx, "Deleting dependent configs", map[string]interface{}{"workspace_id": workspaceID})
 	configs, err := r.client.ListConfigs(ctx, workspaceID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("failed to list configs: %s", err))
@@ -629,7 +630,7 @@ func (r *workspaceResource) deleteDependentResources(ctx context.Context, worksp
 	}
 
 	// 4. Delete Guardrails
-	tflog.Info(ctx, "Deleting dependent guardrails", map[string]interface{}{"workspace_id": workspaceID})
+	tflog.Debug(ctx, "Deleting dependent guardrails", map[string]interface{}{"workspace_id": workspaceID})
 	guardrails, err := r.client.ListAllGuardrails(ctx, workspaceID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("failed to list guardrails: %s", err))
@@ -642,7 +643,7 @@ func (r *workspaceResource) deleteDependentResources(ctx context.Context, worksp
 	}
 
 	// 5. Delete Virtual Keys / Providers
-	tflog.Info(ctx, "Deleting dependent virtual keys (providers)", map[string]interface{}{"workspace_id": workspaceID})
+	tflog.Debug(ctx, "Deleting dependent virtual keys (providers)", map[string]interface{}{"workspace_id": workspaceID})
 	providers, err := r.client.ListAllProviders(ctx, workspaceID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("failed to list providers: %s", err))
@@ -672,7 +673,7 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 
 	// If force_delete is true, remove all blocking resources first.
 	if state.ForceDelete.ValueBool() {
-		tflog.Info(ctx, "force_delete is true; removing dependent resources before workspace deletion", map[string]interface{}{
+		tflog.Debug(ctx, "force_delete is true; removing dependent resources before workspace deletion", map[string]interface{}{
 			"workspace_id": state.ID.ValueString(),
 		})
 		if err := r.deleteDependentResources(ctx, state.ID.ValueString()); err != nil {
@@ -686,10 +687,7 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 
 	// Delete existing workspace (API requires name in body as confirmation).
 	// State stores the clean name (without icon prefix), which is what the API expects.
-	wsID := state.ID.ValueString()
-	wsName := state.Name.ValueString()
-
-	err := r.client.DeleteWorkspace(ctx, wsID, wsName)
+	err := r.client.DeleteWorkspace(ctx, state.ID.ValueString(), state.Name.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Deleting Portkey Workspace",
