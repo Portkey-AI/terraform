@@ -1,11 +1,16 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
 
 func TestAccWorkspaceResource_basic(t *testing.T) {
@@ -680,4 +685,145 @@ resource "portkey_workspace" "test" {
   description = "Workspace with icon"
 }
 `, name, icon)
+}
+
+// TestAccWorkspaceResource_forceDelete verifies that setting
+// force_delete = true allows a workspace with out-of-band dependent resources
+// to be destroyed without manual cleanup. The dependent resource is created
+// directly via the API (not as a Terraform resource), so Terraform's
+// dependency graph won't destroy it first — this forces the provider's
+// deleteDependentResources logic to actually run.
+func TestAccWorkspaceResource_forceDelete(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-cascade")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckWorkspaceDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWorkspaceForceDelete(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_workspace.cascade", "id"),
+					resource.TestCheckResourceAttr("portkey_workspace.cascade", "name", rName),
+					resource.TestCheckResourceAttr("portkey_workspace.cascade", "force_delete", "true"),
+					createOutOfBandConfig(rName+"-oob-config"),
+				),
+			},
+		},
+	})
+}
+
+// TestAccWorkspaceResource_forceDeleteFalse verifies that force_delete = false
+// (the default) causes workspace destruction to fail with AB07 when an
+// out-of-band dependent resource exists.
+func TestAccWorkspaceResource_forceDeleteFalse(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-noforce")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWorkspaceForceDeleteFalse(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_workspace.cascade", "id"),
+					resource.TestCheckResourceAttr("portkey_workspace.cascade", "force_delete", "false"),
+					createOutOfBandConfig(rName+"-oob-config"),
+				),
+			},
+			{
+				Config:      testAccWorkspaceForceDeleteFalse(rName),
+				Destroy:     true,
+				ExpectError: regexp.MustCompile(`AB07`),
+			},
+			// Switch to force_delete=true so the framework's implicit
+			// post-test destroy can clean up the workspace and its
+			// out-of-band config.
+			{
+				Config: testAccWorkspaceForceDelete(rName),
+			},
+		},
+	})
+}
+
+// createOutOfBandConfig returns a check function that creates a config
+// directly via the Portkey API in the given workspace. Configs don't require
+// integration grants (unlike providers), so they work in freshly created
+// workspaces. The resource is invisible to Terraform state, so only
+// deleteDependentResources can clean it up during workspace destruction.
+func createOutOfBandConfig(name string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs := s.RootModule().Resources["portkey_workspace.cascade"]
+
+		baseURL := os.Getenv("PORTKEY_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://api.portkey.ai/v1"
+		}
+
+		c, err := client.NewClient(baseURL, os.Getenv("PORTKEY_API_KEY"))
+		if err != nil {
+			return err
+		}
+
+		_, err = c.CreateConfig(context.Background(), client.CreateConfigRequest{
+			Name:        name,
+			Config:      map[string]interface{}{"retry": map[string]interface{}{"attempts": 3}},
+			WorkspaceID: rs.Primary.ID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create out-of-band config: %w", err)
+		}
+
+		return nil
+	}
+}
+
+// testAccCheckWorkspaceDestroy verifies that workspace resources have been
+// deleted from the API after Terraform destroys them.
+func testAccCheckWorkspaceDestroy(s *terraform.State) error {
+	c, err := newTestClient()
+	if err != nil {
+		return fmt.Errorf("error creating test client: %s", err)
+	}
+
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "portkey_workspace" {
+			continue
+		}
+
+		_, err := c.GetWorkspace(context.Background(), rs.Primary.ID)
+		if err == nil {
+			return fmt.Errorf("workspace %s still exists", rs.Primary.ID)
+		}
+		if !client.IsNotFound(err) {
+			return fmt.Errorf("unexpected error checking workspace %s: %s", rs.Primary.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func testAccWorkspaceForceDelete(name string) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_workspace" "cascade" {
+  name         = %[1]q
+  description  = "Workspace for cascade delete test"
+  force_delete = true
+}
+`, name)
+}
+
+func testAccWorkspaceForceDeleteFalse(name string) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_workspace" "cascade" {
+  name         = %[1]q
+  description  = "Workspace for force_delete=false test"
+  force_delete = false
+}
+`, name)
 }

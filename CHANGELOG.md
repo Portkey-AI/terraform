@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`terraform import` then `terraform destroy` now cascades correctly** — `ImportState` was a bare passthrough, so `force_delete` (which has no API representation) was absent from state after import. Because schema defaults are applied during plan — not during import or destroy — a `terraform destroy` after import always saw `force_delete = false` and skipped cascade deletion, failing with `409 AB07`. The provider now seeds `force_delete = true` in state at import time.
+
+### Changed
+- **`force_delete` test uses configs instead of providers** — the acceptance test for cascade deletion previously created an out-of-band provider, which required an integration grant (`TEST_INTEGRATION_ID`) that a freshly created workspace doesn't have. The test now creates an out-of-band config (no grant needed) and also adds a negative case (`force_delete = false` must fail with AB07) and a `CheckDestroy` assertion.
+
 ## [0.2.32] - 2026-08-05
 
 ### Added
@@ -43,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`portkey_workspace_security_settings` resource** — manage the per-workspace role-permission flags (`security_settings`) exposed by `PUT /admin/workspaces/{id}`. Every flag is `Optional+Computed`: omit a flag to keep its current API value. Because the Portkey API requires the full object on every PUT, the provider reads the current settings and overlays user-specified values before writing, so partial configs never clobber untouched flags. Supports import by `workspace_id`. Note: a workspace can only override a section (e.g. `logs`, `data_visibility`) when the organization has enabled workspace-level override for that section; otherwise the API returns `AB01 "Workspace override is not enabled"`. Destroying the resource removes it from Terraform state only and leaves the underlying API values untouched.
 
 ### Changed
-- **Workspace Cascade-Delete on Destroy** - `portkey_workspace` now sets `force_delete=true` when deleting, so `terraform destroy` cascades through dependent resources (providers/virtual-keys, configs, workspace API keys) automatically. Previously, workspaces with any dependents would fail with `409 AB07` and operators had to manually delete each dependent via the API before retrying.
+- **Workspace Cascade-Delete on Destroy** - `portkey_workspace` now defaults `force_delete` to `true`, so `terraform destroy` cascades through all dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) automatically — including those created outside Terraform. Previously, workspaces with any dependents would fail with `409 AB07`. Set `force_delete = false` to preserve the old behavior where the API rejects deletion when dependents exist.
 
 ### Fixed
 - **SCIM Workspace Mappings Pagination** - Fixed `ListScimWorkspaceMappings` to paginate through all results instead of returning only the first page (100 items). Organizations with more than 100 SCIM workspace mappings would see `terraform import` fail with "Cannot import non-existent remote object" for mappings beyond the first page, and the `portkey_scim_workspace_mappings` data source would return incomplete results.

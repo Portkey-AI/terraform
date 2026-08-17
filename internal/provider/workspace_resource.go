@@ -11,10 +11,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/portkey-ai/terraform-provider-portkey/internal/client"
 )
 
@@ -44,6 +46,7 @@ type workspaceResourceModel struct {
 	UsageLimits types.List   `tfsdk:"usage_limits"`
 	RateLimits  types.List   `tfsdk:"rate_limits"`
 	Metadata    types.Map    `tfsdk:"metadata"`
+	ForceDelete types.Bool   `tfsdk:"force_delete"`
 	CreatedAt   types.String `tfsdk:"created_at"`
 	UpdatedAt   types.String `tfsdk:"updated_at"`
 }
@@ -154,6 +157,12 @@ func (r *workspaceResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Description: "Custom metadata to attach to the workspace. This metadata can be used for tracking, observability, and identifying workspaces. All API keys created in this workspace will inherit this metadata by default.",
 				Optional:    true,
 				ElementType: types.StringType,
+			},
+			"force_delete": schema.BoolAttribute{
+				Description: "If true, automatically deletes all dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) before deleting the workspace — including resources created outside Terraform. This is a Terraform-only convenience flag; the Portkey API does not support cascade deletion natively. Default: true.",
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(true),
 			},
 			"created_at": schema.StringAttribute{
 				Description: "Timestamp when the workspace was created.",
@@ -573,6 +582,85 @@ func (r *workspaceResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 }
 
+// deleteDependentResources lists and deletes all workspace-scoped resources that
+// block workspace deletion. It processes each resource type in order and collects
+// errors without aborting early, so that as many resources as possible are removed
+// in a single pass. On partial failure the caller aborts the workspace delete;
+// the workspace survives with some dependents already gone, and retrying is safe.
+func (r *workspaceResource) deleteDependentResources(ctx context.Context, workspaceID string) error {
+	var errs []string
+
+	// 1. Delete Prompts
+	tflog.Debug(ctx, "Deleting dependent prompts", map[string]interface{}{"workspace_id": workspaceID})
+	prompts, err := r.client.ListAllPrompts(ctx, workspaceID)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("failed to list prompts: %s", err))
+	} else {
+		for _, p := range prompts {
+			if err := r.client.DeletePrompt(ctx, p.ID); err != nil {
+				errs = append(errs, fmt.Sprintf("failed to delete prompt %q (id=%s): %s", p.Name, p.ID, err))
+			}
+		}
+	}
+
+	// 2. Delete Prompt Partials
+	tflog.Debug(ctx, "Deleting dependent prompt partials", map[string]interface{}{"workspace_id": workspaceID})
+	partials, err := r.client.ListPromptPartials(ctx, workspaceID)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("failed to list prompt partials: %s", err))
+	} else {
+		for _, pp := range partials {
+			if err := r.client.DeletePromptPartial(ctx, pp.ID); err != nil {
+				errs = append(errs, fmt.Sprintf("failed to delete prompt partial %q (id=%s): %s", pp.Name, pp.ID, err))
+			}
+		}
+	}
+
+	// 3. Delete Configs
+	tflog.Debug(ctx, "Deleting dependent configs", map[string]interface{}{"workspace_id": workspaceID})
+	configs, err := r.client.ListConfigs(ctx, workspaceID)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("failed to list configs: %s", err))
+	} else {
+		for _, cfg := range configs {
+			if err := r.client.DeleteConfig(ctx, cfg.Slug); err != nil {
+				errs = append(errs, fmt.Sprintf("failed to delete config %q (slug=%s): %s", cfg.Name, cfg.Slug, err))
+			}
+		}
+	}
+
+	// 4. Delete Guardrails
+	tflog.Debug(ctx, "Deleting dependent guardrails", map[string]interface{}{"workspace_id": workspaceID})
+	guardrails, err := r.client.ListAllGuardrails(ctx, workspaceID)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("failed to list guardrails: %s", err))
+	} else {
+		for _, g := range guardrails {
+			if err := r.client.DeleteGuardrail(ctx, g.ID); err != nil {
+				errs = append(errs, fmt.Sprintf("failed to delete guardrail %q (id=%s): %s", g.Name, g.ID, err))
+			}
+		}
+	}
+
+	// 5. Delete Virtual Keys / Providers
+	tflog.Debug(ctx, "Deleting dependent virtual keys (providers)", map[string]interface{}{"workspace_id": workspaceID})
+	providers, err := r.client.ListAllProviders(ctx, workspaceID)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("failed to list providers: %s", err))
+	} else {
+		for _, prov := range providers {
+			if err := r.client.DeleteProvider(ctx, prov.ID, workspaceID); err != nil {
+				errs = append(errs, fmt.Sprintf("failed to delete provider %q (id=%s): %s", prov.Name, prov.ID, err))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("errors while deleting dependent resources:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+	return nil
+}
+
 // Delete deletes the resource and removes the Terraform state on success.
 func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	// Retrieve values from state
@@ -581,6 +669,20 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	// If force_delete is true, remove all blocking resources first.
+	if state.ForceDelete.ValueBool() {
+		tflog.Debug(ctx, "force_delete is true; removing dependent resources before workspace deletion", map[string]interface{}{
+			"workspace_id": state.ID.ValueString(),
+		})
+		if err := r.deleteDependentResources(ctx, state.ID.ValueString()); err != nil {
+			resp.Diagnostics.AddError(
+				"Error Deleting Dependent Resources",
+				"Could not delete all dependent resources for workspace: "+err.Error(),
+			)
+			return
+		}
 	}
 
 	// Delete existing workspace (API requires name in body as confirmation).
@@ -597,10 +699,12 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 }
 
 // ImportState imports the resource state.
-// We use simple passthrough — Read will populate all fields. The icon field
-// starts as null in state after import, which triggers backwards-compatible
-// behavior in Read (no name stripping). Users who want icon management add
-// the icon attribute to their config after import.
+// The icon field starts as null in state after import, which triggers
+// backwards-compatible behavior in Read (no name stripping). Users who want
+// icon management add the icon attribute to their config after import.
 func (r *workspaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	// force_delete has no API representation; seed the schema default so an
+	// import-then-destroy cascades like any other workspace.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("force_delete"), true)...)
 }
