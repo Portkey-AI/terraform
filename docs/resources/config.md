@@ -22,13 +22,13 @@ Manages a Portkey config. Configs define routing rules, caching, retry policies,
 
 ### Optional
 
-- `is_default` (Boolean) Whether this config is the default for the workspace.
 - `workspace_id` (String) Workspace ID to create the config in. Required when using org-level API keys.
 
 ### Read-Only
 
 - `created_at` (String) Timestamp when the config was created.
 - `id` (String) Config identifier (UUID).
+- `is_default` (Boolean) Whether this config is the default for the workspace. Read-only: the Portkey /configs API silently drops is_default on both POST and PUT, so setting it in HCL never took effect and previously caused "produced an unexpected new value: .is_default" apply errors. To pin a specific config as the default for an API key, use `portkey_api_key.defaults.config_id` instead.
 - `slug` (String) URL-friendly identifier for the config. Auto-generated based on name.
 - `status` (String) Status of the config (active, archived).
 - `updated_at` (String) Timestamp when the config was last updated.

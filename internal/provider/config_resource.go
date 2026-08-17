@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -87,9 +88,16 @@ func (r *configResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"is_default": schema.BoolAttribute{
-				Description: "Whether this config is the default for the workspace.",
-				Optional:    true,
-				Computed:    true,
+				Description: "Whether this config is the default for the workspace. Read-only: " +
+					"the Portkey /configs API silently drops is_default on both POST and PUT, " +
+					"so setting it in HCL never took effect and previously caused " +
+					"\"produced an unexpected new value: .is_default\" apply errors. To pin a " +
+					"specific config as the default for an API key, use " +
+					"`portkey_api_key.defaults.config_id` instead.",
+				Computed: true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"status": schema.StringAttribute{
 				Description: "Status of the config (active, archived).",
@@ -161,13 +169,11 @@ func (r *configResource) Create(ctx context.Context, req resource.CreateRequest,
 		createReq.WorkspaceID = plan.WorkspaceID.ValueString()
 	}
 
-	if !plan.IsDefault.IsNull() && !plan.IsDefault.IsUnknown() {
-		isDefault := 0
-		if plan.IsDefault.ValueBool() {
-			isDefault = 1
-		}
-		createReq.IsDefault = &isDefault
-	}
+	// is_default is intentionally not sent: the Portkey /configs API
+	// silently drops it, and doing so caused the "produced an unexpected
+	// new value: .is_default" apply-time error. The attribute is
+	// Computed-only in the schema; the API-reported value is picked up
+	// below when the created config is read back.
 
 	createResp, err := r.client.CreateConfig(ctx, createReq)
 	if err != nil {
@@ -320,7 +326,11 @@ func (r *configResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	// Update existing config
+	// Update existing config.
+	// is_default is intentionally not sent: PUT /configs/{id} silently
+	// drops it (same as POST /configs), and doing so caused the
+	// "produced an unexpected new value: .is_default" error class. See
+	// the schema comment on the is_default attribute for the full story.
 	updateReq := client.UpdateConfigRequest{
 		Name:   plan.Name.ValueString(),
 		Config: configMap,

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -132,6 +133,57 @@ func TestAccConfigResource_jsonWhitespace(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestAccConfigResource_isDefaultReadOnly is a regression test for the
+// "produced an unexpected new value: .is_default" apply-time bug. The
+// Portkey /configs endpoints silently drop is_default on both POST and
+// PUT under either camelCase (isDefault, the historical typo in this
+// client) or snake_case (is_default). Verified against api.portkey.ai
+// and against albus/src/api/v2/configs/controllers/{create,update}.js.
+// Because the create response then reports is_default: 0 while the plan
+// carried true, the framework rejected the apply.
+//
+// The attribute is now Computed-only: any HCL that tries to write it is
+// caught at plan time with the framework's canonical
+// "Can't configure a value for" message instead of blowing up mid-apply.
+func TestAccConfigResource_isDefaultReadOnly(t *testing.T) {
+	rName := acctest.RandomWithPrefix("tf-acc-isdefault")
+	workspaceID := getTestWorkspaceID()
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Writing is_default = true is rejected at plan time.
+			{
+				Config:      testAccConfigResourceConfigWithIsDefault(rName, workspaceID, `{"retry":{"attempts":3}}`, true),
+				ExpectError: regexp.MustCompile(`(?s)is_default.*(read-only|Can't configure a value|Value Conversion Error)`),
+			},
+			// Omitting the attribute succeeds and state reflects the API's
+			// value (false, the DB default: configs.is_default is never
+			// written by any HTTP endpoint).
+			{
+				Config: testAccConfigResourceConfig(rName, workspaceID, `{"retry":{"attempts":3}}`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("portkey_config.test", "is_default", "false"),
+				),
+			},
+		},
+	})
+}
+
+func testAccConfigResourceConfigWithIsDefault(name, workspaceID, config string, isDefault bool) string {
+	return fmt.Sprintf(`
+provider "portkey" {}
+
+resource "portkey_config" "test" {
+  name         = %[1]q
+  workspace_id = %[2]q
+  config       = %[3]q
+  is_default   = %[4]t
+}
+`, name, workspaceID, config, isDefault)
 }
 
 func testAccConfigResourceConfig(name, workspaceID, config string) string {
