@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-08-19
+
 ### Added
 - **`force_delete` on `portkey_workspace`** — opt in to cascade deletion so `terraform destroy` removes a workspace's dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) before deleting the workspace itself, instead of failing with `409 AB07` ("Unable to delete. Please ensure that all Virtual Keys are deleted"). The Portkey API has no native cascade, so this is a Terraform-only convenience flag: the provider lists and deletes each dependent type in turn, collecting errors across the whole pass rather than aborting on the first one. A partial failure leaves the workspace alive with some dependents already gone; retrying is safe. **Defaults to `false`.** Resources that Terraform manages are already destroyed first by its own dependency graph, so the cascade only changes behaviour for resources created outside Terraform — anything added through the Portkey UI or another tool in that workspace. Enabling it means a `terraform destroy` will delete those too, so treat it as a flag for workspaces whose entire contents are disposable. This replaces the `force_delete: true` body parameter that 0.2.29 added to the workspace delete request, which the Admin API ignored; the delete request now carries only the workspace name.
 
@@ -372,7 +374,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace deletion may be blocked by existing resources
 - Prompt template updates create new versions (use makeDefault to promote)
 
-[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.32...HEAD
+[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.33...HEAD
+[0.2.33]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.32...v0.2.33
 [0.2.32]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.31...v0.2.32
 [0.2.31]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.30...v0.2.31
 [0.2.30]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.29...v0.2.30
