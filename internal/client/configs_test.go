@@ -13,12 +13,10 @@ import (
 // "produced an unexpected new value: .is_default" bug on portkey_config.
 //
 // The Portkey /configs API silently drops is_default (and its historical
-// misspelling isDefault) on both POST and PUT — verified against
-// api.portkey.ai and against the backend source at
-// albus/src/api/v2/configs/controllers/{create,update}.js. Sending it
-// only produced the illusion that setting is_default worked, then a hard
-// "provider produced inconsistent result" error at apply time because the
-// API's response (is_default: 0) contradicted the plan value (true).
+// misspelling isDefault) on both POST and PUT. Sending it only produced
+// the illusion that setting is_default worked, then a hard "provider
+// produced inconsistent result" error at apply time because the API's
+// response (is_default: 0) contradicted the plan value (true).
 //
 // The permanent fix is to remove any is_default-shaped field from
 // CreateConfigRequest so no caller — however well-meaning — can ever

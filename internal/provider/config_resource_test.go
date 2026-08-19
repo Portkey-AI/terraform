@@ -139,10 +139,9 @@ func TestAccConfigResource_jsonWhitespace(t *testing.T) {
 // "produced an unexpected new value: .is_default" apply-time bug. The
 // Portkey /configs endpoints silently drop is_default on both POST and
 // PUT under either camelCase (isDefault, the historical typo in this
-// client) or snake_case (is_default). Verified against api.portkey.ai
-// and against albus/src/api/v2/configs/controllers/{create,update}.js.
-// Because the create response then reports is_default: 0 while the plan
-// carried true, the framework rejected the apply.
+// client) or snake_case (is_default). Because the create response then
+// reports is_default: 0 while the plan carried true, the framework
+// rejected the apply.
 //
 // The attribute is now Computed-only: any HCL that tries to write it is
 // caught at plan time with the framework's canonical

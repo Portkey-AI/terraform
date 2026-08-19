@@ -1270,14 +1270,13 @@ type Config struct {
 // CreateConfigRequest represents the request to create a config.
 //
 // Note: is_default is deliberately absent. The Portkey /configs endpoint
-// silently drops the field on both POST and PUT (verified against
-// api.portkey.ai and against albus/src/api/v2/configs/controllers/), and
-// prior to its removal this struct carried it as `json:"isDefault"` —
-// serialising a value the API discarded, then reading back
-// `is_default: 0` and tripping the plugin-framework's post-apply
-// consistency check as "produced an unexpected new value: .is_default:
-// was cty.True, but now cty.False". Keeping the field out of the struct
-// is what makes that regression class impossible to reintroduce.
+// silently drops the field on both POST and PUT, and prior to its
+// removal this struct carried it as `json:"isDefault"` — serialising a
+// value the API discarded, then reading back `is_default: 0` and
+// tripping the plugin-framework's post-apply consistency check as
+// "produced an unexpected new value: .is_default: was cty.True, but now
+// cty.False". Keeping the field out of the struct is what makes that
+// regression class impossible to reintroduce.
 type CreateConfigRequest struct {
 	Name        string                 `json:"name"`
 	Config      map[string]interface{} `json:"config"`
