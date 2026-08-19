@@ -733,10 +733,18 @@ func (c *Client) DeleteUserInvite(ctx context.Context, id string) error {
 // SecretKey optionally overrides the secret_key defined on the referenced
 // secret reference (used to pick a specific field out of a multi-value
 // secret payload).
+//
+// ValueFormat controls how the resolved secret is interpreted before being
+// injected into TargetField. Accepted values are "string" (default; leave the
+// value as-is) or "json" (parse a JSON-encoded string payload into an object).
+// "json" is required for object-valued target fields such as
+// configurations.vertex_service_account_json when the secret store returns
+// the value as a JSON-encoded string.
 type SecretMapping struct {
 	TargetField       string  `json:"target_field"`
 	SecretReferenceID string  `json:"secret_reference_id"`
 	SecretKey         *string `json:"secret_key,omitempty"`
+	ValueFormat       *string `json:"value_format,omitempty"`
 }
 
 // Integration represents a Portkey integration (connection to an AI provider)
