@@ -303,9 +303,9 @@ Manages a Portkey workspace.
 |----------|------|----------|-------------|
 | `name` | String | Yes | Name of the workspace |
 | `description` | String | No | Description of the workspace |
-| `force_delete` | Boolean | No | Terraform-only convenience flag. Defaults to `true`; when enabled, destroy deletes dependent resources in the workspace before deleting the workspace itself. Set to `false` to let the Portkey API reject deletion when dependencies still exist. |
+| `force_delete` | Boolean | No | Terraform-only convenience flag. Defaults to `false`, so the Portkey API rejects deletion while dependencies still exist. Set to `true` to have destroy delete dependent resources in the workspace — including resources created outside Terraform — before deleting the workspace itself. |
 
-**Destroy semantics**: `force_delete = true` is the default, including for imported workspaces. On destroy, the provider first removes dependent resources in the workspace before calling the workspace delete endpoint.
+**Destroy semantics**: `force_delete = false` is the default, including for imported workspaces. Resources that Terraform manages are destroyed first by its own dependency graph, so the cascade only matters for resources created outside Terraform. With `force_delete = true`, the provider removes those dependent resources before calling the workspace delete endpoint.
 
 **Import**: `terraform import portkey_workspace.example workspace-id`
 

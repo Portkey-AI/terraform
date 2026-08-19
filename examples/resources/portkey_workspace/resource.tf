@@ -23,12 +23,13 @@ resource "portkey_workspace" "with_limits" {
   }]
 }
 
-# Opt out of cascade deletion — Terraform will fail the destroy if
-# dependent resources (prompts, configs, virtual keys, etc.) still exist.
-resource "portkey_workspace" "protected" {
-  name         = "Shared"
-  description  = "Workspace with resources managed outside Terraform"
-  force_delete = false
+# Opt in to cascade deletion — destroy removes dependent resources (prompts,
+# configs, virtual keys, etc.) first, including those created outside
+# Terraform. Without this, the destroy fails with 409 AB07 while they exist.
+resource "portkey_workspace" "disposable" {
+  name         = "Scratch"
+  description  = "Workspace whose contents may be destroyed with it"
+  force_delete = true
 }
 
 # To clear limits, simply remove the usage_limits or rate_limits blocks
