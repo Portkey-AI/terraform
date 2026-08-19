@@ -714,10 +714,12 @@ func TestAccWorkspaceResource_forceDelete(t *testing.T) {
 	})
 }
 
-// TestAccWorkspaceResource_forceDeleteFalse verifies that force_delete = false
-// (the default) causes workspace destruction to fail with AB07 when an
-// out-of-band dependent resource exists.
-func TestAccWorkspaceResource_forceDeleteFalse(t *testing.T) {
+// TestAccWorkspaceResource_forceDeleteDefault verifies that omitting
+// force_delete leaves it false, so workspace destruction fails with AB07 when
+// an out-of-band dependent resource exists rather than destroying resources
+// Terraform does not manage. The config omits the attribute deliberately: the
+// point is to pin the schema default, not an explicit setting.
+func TestAccWorkspaceResource_forceDeleteDefault(t *testing.T) {
 	rName := acctest.RandomWithPrefix("tf-acc-noforce")
 
 	resource.Test(t, resource.TestCase{
@@ -725,7 +727,7 @@ func TestAccWorkspaceResource_forceDeleteFalse(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccWorkspaceForceDeleteFalse(rName),
+				Config: testAccWorkspaceForceDeleteOmitted(rName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("portkey_workspace.cascade", "id"),
 					resource.TestCheckResourceAttr("portkey_workspace.cascade", "force_delete", "false"),
@@ -733,7 +735,7 @@ func TestAccWorkspaceResource_forceDeleteFalse(t *testing.T) {
 				),
 			},
 			{
-				Config:      testAccWorkspaceForceDeleteFalse(rName),
+				Config:      testAccWorkspaceForceDeleteOmitted(rName),
 				Destroy:     true,
 				ExpectError: regexp.MustCompile(`AB07`),
 			},
@@ -816,14 +818,14 @@ resource "portkey_workspace" "cascade" {
 `, name)
 }
 
-func testAccWorkspaceForceDeleteFalse(name string) string {
+// force_delete is deliberately absent so the test pins the schema default.
+func testAccWorkspaceForceDeleteOmitted(name string) string {
 	return fmt.Sprintf(`
 provider "portkey" {}
 
 resource "portkey_workspace" "cascade" {
-  name         = %[1]q
-  description  = "Workspace for force_delete=false test"
-  force_delete = false
+  name        = %[1]q
+  description = "Workspace for force_delete default test"
 }
 `, name)
 }
