@@ -733,10 +733,18 @@ func (c *Client) DeleteUserInvite(ctx context.Context, id string) error {
 // SecretKey optionally overrides the secret_key defined on the referenced
 // secret reference (used to pick a specific field out of a multi-value
 // secret payload).
+//
+// ValueFormat controls how the resolved secret is interpreted before being
+// injected into TargetField. Accepted values are "string" (default; leave the
+// value as-is) or "json" (parse a JSON-encoded string payload into an object).
+// "json" is required for object-valued target fields such as
+// configurations.vertex_service_account_json when the secret store returns
+// the value as a JSON-encoded string.
 type SecretMapping struct {
 	TargetField       string  `json:"target_field"`
 	SecretReferenceID string  `json:"secret_reference_id"`
 	SecretKey         *string `json:"secret_key,omitempty"`
+	ValueFormat       *string `json:"value_format,omitempty"`
 }
 
 // Integration represents a Portkey integration (connection to an AI provider)
@@ -2457,11 +2465,6 @@ type BulkUpdateModelsRequest struct {
 	Models         []IntegrationModel `json:"models"`
 }
 
-// DeleteModelsRequest represents the request to delete custom models
-type DeleteModelsRequest struct {
-	Models []string `json:"models"`
-}
-
 // GetIntegrationModels retrieves all models for an integration
 func (c *Client) GetIntegrationModels(ctx context.Context, integrationSlug string) (*IntegrationModelsResponse, error) {
 	path := fmt.Sprintf("/integrations/%s/models", integrationSlug)
@@ -2509,13 +2512,32 @@ func (c *Client) UpdateIntegrationModel(ctx context.Context, integrationSlug str
 	return c.UpdateIntegrationModels(ctx, integrationSlug, req)
 }
 
-// DeleteIntegrationModels deletes custom models from an integration
+// DeleteIntegrationModels deletes custom models from an integration.
+//
+// Portkey Admin API contract for DELETE /integrations/{slug}/models is to
+// pass the model slugs as a comma-separated `slugs` query parameter (see
+// https://docs.portkey.ai/docs/api-reference/admin-api/control-plane/integrations/models/delete-custom-model).
+// The previous body-based shape (`{"models":[...]}`) is rejected by the
+// server with `400 AB01 Validation failed: Invalid value` on the `slugs`
+// query param, which surfaces as a Terraform apply failure that then
+// blocks every subsequent apply against the same integration state until
+// a human intervenes.
+//
+// modelSlugs is joined with a literal `,` and URL-escaped once. Go's
+// url.QueryEscape encodes the literal comma to `%2C`, so the resulting
+// wire query is `slugs=slug1%2Cslug2`. The server URL-decodes and then
+// splits on `,`. Escaping each slug separately and joining with a
+// literal `,` would produce a different wire string (`slugs=slug1,slug2`)
+// but the same decoded value on the server side. Slugs containing
+// commas are unsupported by the Admin API and are not defended against
+// here.
 func (c *Client) DeleteIntegrationModels(ctx context.Context, integrationSlug string, modelSlugs []string) error {
-	path := fmt.Sprintf("/integrations/%s/models", integrationSlug)
-	req := DeleteModelsRequest{
-		Models: modelSlugs,
-	}
-	_, err := c.doRequest(ctx, http.MethodDelete, path, req)
+	path := fmt.Sprintf(
+		"/integrations/%s/models?slugs=%s",
+		integrationSlug,
+		url.QueryEscape(strings.Join(modelSlugs, ",")),
+	)
+	_, err := c.doRequest(ctx, http.MethodDelete, path, nil)
 	return err
 }
 

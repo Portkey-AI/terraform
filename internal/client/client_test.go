@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -265,6 +266,132 @@ func TestIsNotFound(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := IsNotFound(tc.err); got != tc.want {
 				t.Errorf("IsNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDeleteIntegrationModels_QueryParamShape verifies the request matches
+// the Portkey Admin API contract: DELETE /integrations/{slug}/models with
+// the model slugs passed as a comma-separated `slugs` query parameter,
+// and NO JSON body. See
+// https://docs.portkey.ai/docs/api-reference/admin-api/control-plane/integrations/models/delete-custom-model
+//
+// The previous body-based shape triggered `400 AB01 Validation failed:
+// Invalid value` on the `slugs` query param, and cascaded into TFC apply
+// wedges every time a custom model was removed from state.
+func TestDeleteIntegrationModels_QueryParamShape(t *testing.T) {
+	cases := []struct {
+		name        string
+		integration string
+		slugs       []string
+		wantSlugs   string // decoded slugs query param
+		wantPath    string
+	}{
+		{
+			name:        "single bare-id AIP slug",
+			integration: "bedrock-example",
+			slugs:       []string{"aip1234567890"},
+			wantSlugs:   "aip1234567890",
+			wantPath:    "/integrations/bedrock-example/models",
+		},
+		{
+			name:        "single ARN slug (colons and slashes URL-escaped)",
+			integration: "bedrock-example",
+			slugs:       []string{"arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/aip1234567890"},
+			wantSlugs:   "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/aip1234567890",
+			wantPath:    "/integrations/bedrock-example/models",
+		},
+		{
+			name:        "multiple bare-id slugs joined with comma",
+			integration: "bedrock-example",
+			slugs:       []string{"aip1234567890", "another-slug"},
+			wantSlugs:   "aip1234567890,another-slug",
+			wantPath:    "/integrations/bedrock-example/models",
+		},
+		{
+			// Anthropic-on-Vertex publisher-model shape.
+			// Per RFC 3986 `@` is allowed in the query component (it's in
+			// pchar), so escaping is not strictly required. Go's
+			// url.QueryEscape encodes it to %40 anyway; net/url and the
+			// server-side query parser both round-trip it. Empirically
+			// verified against a live Portkey staging endpoint: server-side
+			// echo returned the unescaped `anthropic.claude-sonnet-4-5@20250929`.
+			name:        "Vertex Anthropic publisher slug with @ version",
+			integration: "vertex-ai-example",
+			slugs:       []string{"anthropic.claude-sonnet-4-5@20250929"},
+			wantSlugs:   "anthropic.claude-sonnet-4-5@20250929",
+			wantPath:    "/integrations/vertex-ai-example/models",
+		},
+		{
+			// Vertex fine-tuned endpoint slug shape (dot + numeric).
+			// All-safe characters, no escaping needed. Included so the
+			// test matrix covers Vertex's three custom-model families
+			// (endpoint IDs, Anthropic publishers, Gemini variants).
+			name:        "Vertex endpoint ID slug",
+			integration: "vertex-ai-example",
+			slugs:       []string{"endpoints.5895219608809373696"},
+			wantSlugs:   "endpoints.5895219608809373696",
+			wantPath:    "/integrations/vertex-ai-example/models",
+		},
+		{
+			// Vertex Gemini variant slug (bare, dot-separated, no colons).
+			name:        "Vertex Gemini variant slug",
+			integration: "vertex-ai-example",
+			slugs:       []string{"gemini-3.1-pro-preview"},
+			wantSlugs:   "gemini-3.1-pro-preview",
+			wantPath:    "/integrations/vertex-ai-example/models",
+		},
+		{
+			// Multi-slug ARN case: two AIP ARNs comma-joined + URL-escaped
+			// as a single value. Server-side split-on-comma is what the
+			// Portkey API contract requires. Empirically verified against
+			// the live staging endpoint.
+			name:        "multi-slug two ARNs comma-joined",
+			integration: "bedrock-example",
+			slugs: []string{
+				"arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/aip1",
+				"arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/aip2",
+			},
+			wantSlugs: "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/aip1,arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/aip2",
+			wantPath:  "/integrations/bedrock-example/models",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				gotMethod string
+				gotPath   string
+				gotSlugs  string
+				gotBody   []byte
+			)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotMethod = r.Method
+				gotPath = r.URL.Path
+				gotSlugs = r.URL.Query().Get("slugs")
+				gotBody, _ = io.ReadAll(r.Body)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			t.Cleanup(srv.Close)
+
+			c := newTestClient(t, srv.URL)
+			err := c.DeleteIntegrationModels(context.Background(), tc.integration, tc.slugs)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotMethod != http.MethodDelete {
+				t.Errorf("method = %q, want %q", gotMethod, http.MethodDelete)
+			}
+			if gotPath != tc.wantPath {
+				t.Errorf("path = %q, want %q", gotPath, tc.wantPath)
+			}
+			if gotSlugs != tc.wantSlugs {
+				t.Errorf("slugs query param = %q, want %q", gotSlugs, tc.wantSlugs)
+			}
+			if len(gotBody) != 0 {
+				t.Errorf("expected empty request body, got %q", string(gotBody))
 			}
 		})
 	}

@@ -159,10 +159,10 @@ func (r *workspaceResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				ElementType: types.StringType,
 			},
 			"force_delete": schema.BoolAttribute{
-				Description: "If true, automatically deletes all dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) before deleting the workspace — including resources created outside Terraform. This is a Terraform-only convenience flag; the Portkey API does not support cascade deletion natively. Default: true.",
+				Description: "If true, automatically deletes all dependent resources (prompts, prompt partials, configs, guardrails, virtual keys) before deleting the workspace — including resources created outside Terraform. This is a Terraform-only convenience flag; the Portkey API does not support cascade deletion natively. Default: false, so a workspace holding dependents fails to delete with 409 AB07 rather than silently destroying resources Terraform does not manage.",
 				Optional:    true,
 				Computed:    true,
-				Default:     booldefault.StaticBool(true),
+				Default:     booldefault.StaticBool(false),
 			},
 			"created_at": schema.StringAttribute{
 				Description: "Timestamp when the workspace was created.",
@@ -704,7 +704,9 @@ func (r *workspaceResource) Delete(ctx context.Context, req resource.DeleteReque
 // icon management add the icon attribute to their config after import.
 func (r *workspaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
-	// force_delete has no API representation; seed the schema default so an
-	// import-then-destroy cascades like any other workspace.
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("force_delete"), true)...)
+	// force_delete has no API representation, so it is absent from state after
+	// import and a destroy would read Go's zero value rather than the schema
+	// default (defaults apply at plan time, not import or destroy). Seed it
+	// explicitly so an imported workspace behaves like a created one.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("force_delete"), false)...)
 }

@@ -105,6 +105,44 @@ resource "portkey_integration" "vertex_sa" {
 }
 
 # ----------------------------------------------------------------------------
+# Google Vertex AI — service account JSON resolved from HashiCorp Vault at
+# request time. `value_format = "json"` tells the gateway to parse the raw
+# Vault string into an object before injecting it into
+# configurations.vertex_service_account_json. Without it, the SA arrives at
+# Vertex as a string and JWT signing fails.
+# ----------------------------------------------------------------------------
+resource "portkey_secret_reference" "vertex_sa_vault" {
+  name         = "vertex-sa-prod"
+  manager_type = "hashicorp_vault"
+  secret_path  = "secret/data/portkey/vertex-sa"
+  secret_key   = "vertex_service_account_json"
+
+  vault_kubernetes_auth = {
+    vault_addr = "https://vault.internal:8200"
+    vault_role = "portkey-gateway"
+  }
+}
+
+resource "portkey_integration" "vertex_sa_from_vault" {
+  name           = "vertex-production-vault"
+  ai_provider_id = "vertex-ai"
+
+  configurations = jsonencode({
+    vertex_auth_type    = "serviceAccount"
+    vertex_region       = "global"
+    vertex_map_metadata = true
+  })
+
+  secret_mappings = [
+    {
+      target_field        = "configurations.vertex_service_account_json"
+      secret_reference_id = portkey_secret_reference.vertex_sa_vault.slug
+      value_format        = "json"
+    },
+  ]
+}
+
+# ----------------------------------------------------------------------------
 # Google Vertex AI — basic auth (project + region; gateway uses ambient GCP creds).
 # ----------------------------------------------------------------------------
 resource "portkey_integration" "vertex_basic" {

@@ -100,6 +100,10 @@ func (d *integrationDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 							Description: "Optional override for the secret reference's `secret_key`.",
 							Computed:    true,
 						},
+						"value_format": schema.StringAttribute{
+							Description: "How the resolved secret is interpreted before injection into `target_field` (`\"string\"` or `\"json\"`). `\"json\"` parses a JSON-encoded string payload into an object, required for object-valued fields like `configurations.vertex_service_account_json`.",
+							Computed:    true,
+						},
 					},
 				},
 			},
@@ -174,9 +178,13 @@ func (d *integrationDataSource) Read(ctx context.Context, req datasource.ReadReq
 			"target_field":        types.StringValue(m.TargetField),
 			"secret_reference_id": types.StringValue(m.SecretReferenceID),
 			"secret_key":          types.StringNull(),
+			"value_format":        types.StringNull(),
 		}
 		if m.SecretKey != nil {
 			attrs["secret_key"] = types.StringValue(*m.SecretKey)
+		}
+		if m.ValueFormat != nil {
+			attrs["value_format"] = types.StringValue(*m.ValueFormat)
 		}
 		obj, objDiags := types.ObjectValue(secretMappingAttrTypes, attrs)
 		resp.Diagnostics.Append(objDiags...)
