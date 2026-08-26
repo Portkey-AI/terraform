@@ -82,6 +82,25 @@ func TestAccIntegrationModelAccessResource_withPricing(t *testing.T) {
 	})
 }
 
+// TestAccIntegrationModelAccessResource_withCachePricing tests custom cache token pricing.
+func TestAccIntegrationModelAccessResource_withCachePricing(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccIntegrationModelAccessResourceConfigWithCachePricing(),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("portkey_integration_model_access.test", "id"),
+					resource.TestCheckResourceAttr("portkey_integration_model_access.test", "pricing_config.type", "static"),
+					resource.TestCheckResourceAttr("portkey_integration_model_access.test", "pricing_config.pay_as_you_go.cache_read_input_token_price", "0.11"),
+					resource.TestCheckResourceAttr("portkey_integration_model_access.test", "pricing_config.pay_as_you_go.cache_write_input_token_price", "1.375"),
+				),
+			},
+		},
+	})
+}
+
 // TestAccIntegrationModelAccessResource_updatePricing tests updating pricing configuration.
 func TestAccIntegrationModelAccessResource_updatePricing(t *testing.T) {
 	resource.Test(t, resource.TestCase{
@@ -210,6 +229,37 @@ resource "portkey_integration_model_access" "test" {
     pay_as_you_go = {
       request_token_price  = 0.03
       response_token_price = 0.06
+    }
+  }
+}
+`
+}
+
+// testAccIntegrationModelAccessResourceConfigWithCachePricing creates model access with cache pricing.
+func testAccIntegrationModelAccessResourceConfigWithCachePricing() string {
+	return `
+provider "portkey" {}
+
+# Get existing integrations from the organization
+data "portkey_integrations" "all" {}
+
+# Get models available for the first integration
+data "portkey_integration_models" "test" {
+  integration_id = data.portkey_integrations.all.integrations[0].slug
+}
+
+resource "portkey_integration_model_access" "test" {
+  integration_id = data.portkey_integrations.all.integrations[0].slug
+  model_slug     = data.portkey_integration_models.test.models[0].slug
+  enabled        = true
+
+  pricing_config = {
+    type = "static"
+    pay_as_you_go = {
+      request_token_price            = 1.10
+      response_token_price           = 6.60
+      cache_read_input_token_price   = 0.11
+      cache_write_input_token_price  = 1.375
     }
   }
 }

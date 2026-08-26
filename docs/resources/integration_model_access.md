@@ -42,6 +42,8 @@ resource "portkey_integration_model_access" "gpt4_custom_pricing" {
     pay_as_you_go = {
       request_token_price  = 0.03
       response_token_price = 0.06
+      cache_read_input_token_price  = 0.01
+      cache_write_input_token_price = 0.02
     }
   }
 }
@@ -114,6 +116,8 @@ Optional:
 
 - `request_token_price` (Number) Price per request token (input).
 - `response_token_price` (Number) Price per response token (output).
+- `cache_read_input_token_price` (Number) Price per cache read input token.
+- `cache_write_input_token_price` (Number) Price per cache write input token.
 
 ## Import
 

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,36 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 )
+
+func TestPayAsYouGoPricingCacheTokenJSON(t *testing.T) {
+	readPrice := 0.01
+	writePrice := 0.02
+	payload := ModelPricingConfig{
+		Type: "static",
+		PayAsYouGo: &PayAsYouGoPricing{
+			CacheReadInputToken:  &TokenPrice{Price: readPrice},
+			CacheWriteInputToken: &TokenPrice{Price: writePrice},
+		},
+	}
+
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal pricing: %v", err)
+	}
+
+	const expected = `{"type":"static","pay_as_you_go":{"cache_read_input_token":{"price":0.01},"cache_write_input_token":{"price":0.02}}}`
+	if string(encoded) != expected {
+		t.Fatalf("unexpected pricing JSON: %s", encoded)
+	}
+
+	var decoded ModelPricingConfig
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal pricing: %v", err)
+	}
+	if decoded.PayAsYouGo.CacheReadInputToken.Price != readPrice || decoded.PayAsYouGo.CacheWriteInputToken.Price != writePrice {
+		t.Fatalf("cache token prices did not round-trip: %+v", decoded.PayAsYouGo)
+	}
+}
 
 // newTestClient builds a *Client pointed at the given test-server URL with
 // aggressive retry timing so tests complete in milliseconds instead of

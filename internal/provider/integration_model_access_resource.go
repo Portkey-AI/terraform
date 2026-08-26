@@ -31,8 +31,10 @@ var (
 // Type definitions for nested attributes
 var (
 	payAsYouGoAttrTypes = map[string]attr.Type{
-		"request_token_price":  types.Float64Type,
-		"response_token_price": types.Float64Type,
+		"request_token_price":           types.Float64Type,
+		"response_token_price":          types.Float64Type,
+		"cache_read_input_token_price":  types.Float64Type,
+		"cache_write_input_token_price": types.Float64Type,
 	}
 
 	pricingConfigAttrTypes = map[string]attr.Type{
@@ -75,8 +77,10 @@ type pricingConfigModel struct {
 
 // payAsYouGoModel maps the pay_as_you_go block
 type payAsYouGoModel struct {
-	RequestTokenPrice  types.Float64 `tfsdk:"request_token_price"`
-	ResponseTokenPrice types.Float64 `tfsdk:"response_token_price"`
+	RequestTokenPrice         types.Float64 `tfsdk:"request_token_price"`
+	ResponseTokenPrice        types.Float64 `tfsdk:"response_token_price"`
+	CacheReadInputTokenPrice  types.Float64 `tfsdk:"cache_read_input_token_price"`
+	CacheWriteInputTokenPrice types.Float64 `tfsdk:"cache_write_input_token_price"`
 }
 
 // Metadata returns the resource type name.
@@ -156,6 +160,20 @@ func (r *integrationModelAccessResource) Schema(_ context.Context, _ resource.Sc
 							},
 							"response_token_price": schema.Float64Attribute{
 								Description: "Price per response token (output).",
+								Optional:    true,
+								Validators: []validator.Float64{
+									float64validator.AtLeast(0),
+								},
+							},
+							"cache_read_input_token_price": schema.Float64Attribute{
+								Description: "Price per cache read input token.",
+								Optional:    true,
+								Validators: []validator.Float64{
+									float64validator.AtLeast(0),
+								},
+							},
+							"cache_write_input_token_price": schema.Float64Attribute{
+								Description: "Price per cache write input token.",
 								Optional:    true,
 								Validators: []validator.Float64{
 									float64validator.AtLeast(0),
@@ -457,6 +475,16 @@ func buildModelUpdateRequest(ctx context.Context, plan *integrationModelAccessRe
 					Price: payg.ResponseTokenPrice.ValueFloat64(),
 				}
 			}
+			if !payg.CacheReadInputTokenPrice.IsNull() && !payg.CacheReadInputTokenPrice.IsUnknown() {
+				modelReq.PricingConfig.PayAsYouGo.CacheReadInputToken = &client.TokenPrice{
+					Price: payg.CacheReadInputTokenPrice.ValueFloat64(),
+				}
+			}
+			if !payg.CacheWriteInputTokenPrice.IsNull() && !payg.CacheWriteInputTokenPrice.IsUnknown() {
+				modelReq.PricingConfig.PayAsYouGo.CacheWriteInputToken = &client.TokenPrice{
+					Price: payg.CacheWriteInputTokenPrice.ValueFloat64(),
+				}
+			}
 		}
 	}
 
@@ -486,8 +514,10 @@ func mapModelToState(ctx context.Context, model *client.IntegrationModel, state 
 		// Map pay_as_you_go if present
 		if model.PricingConfig.PayAsYouGo != nil {
 			paygAttrs := map[string]attr.Value{
-				"request_token_price":  types.Float64Null(),
-				"response_token_price": types.Float64Null(),
+				"request_token_price":           types.Float64Null(),
+				"response_token_price":          types.Float64Null(),
+				"cache_read_input_token_price":  types.Float64Null(),
+				"cache_write_input_token_price": types.Float64Null(),
 			}
 
 			if model.PricingConfig.PayAsYouGo.RequestToken != nil {
@@ -495,6 +525,12 @@ func mapModelToState(ctx context.Context, model *client.IntegrationModel, state 
 			}
 			if model.PricingConfig.PayAsYouGo.ResponseToken != nil {
 				paygAttrs["response_token_price"] = types.Float64Value(model.PricingConfig.PayAsYouGo.ResponseToken.Price)
+			}
+			if model.PricingConfig.PayAsYouGo.CacheReadInputToken != nil {
+				paygAttrs["cache_read_input_token_price"] = types.Float64Value(model.PricingConfig.PayAsYouGo.CacheReadInputToken.Price)
+			}
+			if model.PricingConfig.PayAsYouGo.CacheWriteInputToken != nil {
+				paygAttrs["cache_write_input_token_price"] = types.Float64Value(model.PricingConfig.PayAsYouGo.CacheWriteInputToken.Price)
 			}
 
 			paygObj, d := types.ObjectValue(payAsYouGoAttrTypes, paygAttrs)
