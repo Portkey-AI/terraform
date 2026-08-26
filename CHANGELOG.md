@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Custom cache token pricing** — `portkey_integration_model_access` and `portkey_integration_models` now support `cache_read_input_token_price` and `cache_write_input_token_price`, mapped to the Portkey API's nested cache pricing fields.
+
 ## [0.2.33] - 2026-08-19
 
 ### Added
@@ -403,4 +406,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.1]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Portkey-AI/terraform-provider-portkey/releases/tag/v0.1.0
-

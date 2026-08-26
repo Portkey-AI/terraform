@@ -2390,8 +2390,10 @@ type TokenPrice struct {
 
 // PayAsYouGoPricing represents pay-as-you-go pricing configuration
 type PayAsYouGoPricing struct {
-	RequestToken  *TokenPrice `json:"request_token,omitempty"`
-	ResponseToken *TokenPrice `json:"response_token,omitempty"`
+	RequestToken         *TokenPrice `json:"request_token,omitempty"`
+	ResponseToken        *TokenPrice `json:"response_token,omitempty"`
+	CacheReadInputToken  *TokenPrice `json:"cache_read_input_token,omitempty"`
+	CacheWriteInputToken *TokenPrice `json:"cache_write_input_token,omitempty"`
 }
 
 // ModelPricingConfig represents pricing configuration for a model

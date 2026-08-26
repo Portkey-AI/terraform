@@ -89,4 +89,6 @@ Read-Only:
 - `pay_as_you_go` (Object) Pay-as-you-go pricing configuration.
   - `request_token_price` (Number) Price per request token.
   - `response_token_price` (Number) Price per response token.
+  - `cache_read_input_token_price` (Number) Price per cache read input token.
+  - `cache_write_input_token_price` (Number) Price per cache write input token.
 - `type` (String) Pricing type.
