@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **`portkey_config.is_default` is now read-only** — the Portkey API has no endpoint for setting `is_default` on a config, so leaving the attribute writable in the provider was a footgun that only ever produced the "inconsistent result after apply" error above. It is now `Computed`, matching the data source. To pin a specific config as the default for an API key, use `portkey_api_key.defaults.config_id` — that goes through a separate endpoint that does honour the write. **Upgrade note:** if your HCL sets `is_default` on a `portkey_config`, remove that line; nothing you wrote there was ever taking effect, and the plan will now error with `Cannot set value for this attribute as the provider has marked it as read-only` until the line is dropped.
+### Added
+- **Custom cache token pricing** — `portkey_integration_model_access` and `portkey_integration_models` now support `cache_read_input_token_price` and `cache_write_input_token_price`, mapped to the Portkey API's nested cache pricing fields.
 
 ## [0.2.33] - 2026-08-19
 
@@ -409,4 +411,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.1]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Portkey-AI/terraform-provider-portkey/releases/tag/v0.1.0
-

@@ -102,6 +102,14 @@ func (d *integrationModelsDataSource) Schema(_ context.Context, _ datasource.Sch
 											Description: "Price per response token.",
 											Computed:    true,
 										},
+										"cache_read_input_token_price": schema.Float64Attribute{
+											Description: "Price per cache read input token.",
+											Computed:    true,
+										},
+										"cache_write_input_token_price": schema.Float64Attribute{
+											Description: "Price per cache write input token.",
+											Computed:    true,
+										},
 									},
 								},
 							},
@@ -180,14 +188,22 @@ func (d *integrationModelsDataSource) Read(ctx context.Context, req datasource.R
 
 			if m.PricingConfig.PayAsYouGo != nil {
 				paygAttrs := map[string]attr.Value{
-					"request_token_price":  types.Float64Null(),
-					"response_token_price": types.Float64Null(),
+					"request_token_price":           types.Float64Null(),
+					"response_token_price":          types.Float64Null(),
+					"cache_read_input_token_price":  types.Float64Null(),
+					"cache_write_input_token_price": types.Float64Null(),
 				}
 				if m.PricingConfig.PayAsYouGo.RequestToken != nil {
 					paygAttrs["request_token_price"] = types.Float64Value(m.PricingConfig.PayAsYouGo.RequestToken.Price)
 				}
 				if m.PricingConfig.PayAsYouGo.ResponseToken != nil {
 					paygAttrs["response_token_price"] = types.Float64Value(m.PricingConfig.PayAsYouGo.ResponseToken.Price)
+				}
+				if m.PricingConfig.PayAsYouGo.CacheReadInputToken != nil {
+					paygAttrs["cache_read_input_token_price"] = types.Float64Value(m.PricingConfig.PayAsYouGo.CacheReadInputToken.Price)
+				}
+				if m.PricingConfig.PayAsYouGo.CacheWriteInputToken != nil {
+					paygAttrs["cache_write_input_token_price"] = types.Float64Value(m.PricingConfig.PayAsYouGo.CacheWriteInputToken.Price)
 				}
 
 				paygObj, d := types.ObjectValue(payAsYouGoAttrTypes, paygAttrs)
