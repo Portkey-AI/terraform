@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-08-27
+
 ### Added
-- **Custom cache token pricing** — `portkey_integration_model_access` and `portkey_integration_models` now support `cache_read_input_token_price` and `cache_write_input_token_price`, mapped to the Portkey API's nested cache pricing fields.
+- **Custom cache token pricing** — `portkey_integration_model_access` and `portkey_integration_models` now support `cache_read_input_token_price` and `cache_write_input_token_price`, mapped to the Portkey API's nested `pay_as_you_go.cache_read_input_token` / `cache_write_input_token` fields. Both are `Optional` and validated as `>= 0`, matching the existing `request_token_price` / `response_token_price` attributes. The Portkey API has supported these fields already; the provider dropped them on both the write and the read path, so a cache price set through the UI was invisible to Terraform and one set in HCL was silently discarded. Verified end to end against the control plane: the API accepts, persists, and returns both fields.
+- **`value_format` on `portkey_integration.secret_mappings[*]`** — choose how a resolved secret is interpreted before it is injected into `target_field`: `"string"` (default, value passed through unchanged) or `"json"` (a JSON-encoded string payload is parsed into an object). This unblocks object-valued target fields, most importantly `configurations.vertex_service_account_json` for Vertex AI service-account auth backed by HashiCorp Vault, AWS Secrets Manager, or Azure Key Vault. Without it the gateway injected the raw string, `client_email` / `private_key` / `project_id` resolved to `undefined`, and GCP rejected the JWT. The API and gateway already supported the field — the provider was the only layer that did not. Mirrored as a `Computed` attribute on the `portkey_integration` data source. **Fully backwards compatible:** the attribute is optional and serialised with `omitempty`, so an integration that does not set it produces a byte-identical request body, and the gateway already defaults a missing `value_format` to `"string"`. Existing state is hydrated as null rather than `"string"` when the API omits the field, so upgrading does not introduce a plan diff.
 
 ## [0.2.33] - 2026-08-19
 
@@ -377,7 +380,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace deletion may be blocked by existing resources
 - Prompt template updates create new versions (use makeDefault to promote)
 
-[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.33...HEAD
+[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.34...HEAD
+[0.2.34]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.33...v0.2.34
 [0.2.33]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.32...v0.2.33
 [0.2.32]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.31...v0.2.32
 [0.2.31]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.30...v0.2.31
