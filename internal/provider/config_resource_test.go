@@ -157,7 +157,7 @@ func TestAccConfigResource_isDefaultReadOnly(t *testing.T) {
 			// Writing is_default = true is rejected at plan time.
 			{
 				Config:      testAccConfigResourceConfigWithIsDefault(rName, workspaceID, `{"retry":{"attempts":3}}`, true),
-				ExpectError: regexp.MustCompile(`(?s)is_default.*(read-only|Can't configure a value|Value Conversion Error)`),
+				ExpectError: regexp.MustCompile(`(?s)is_default.*read-only`),
 			},
 			// Omitting the attribute succeeds and state reflects the API's
 			// value (false, the DB default: configs.is_default is never

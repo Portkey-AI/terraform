@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`portkey_config` "produced an unexpected new value: `.is_default`"** — setting `is_default = true` on a `portkey_config` resource failed every apply with a provider-inconsistency error (`was cty.True, but now cty.False`), and toggling it back to `false` after the workaround produced the same error in reverse. Two independent bugs fed the same symptom: (1) `CreateConfigRequest` tagged the field as `isDefault` (camelCase) instead of the API's `is_default` (snake_case), and (2) the Portkey `POST /configs` and `PUT /configs/{id}` endpoints do not accept `is_default` on write under either name — the field is silently dropped and the response reports the default (`false`). Because the plan carried `true` and the applied state carried `false`, the framework surfaced the mismatch as a hard error.
+
+### Changed
+- **`portkey_config.is_default` is now read-only** — the Portkey API has no endpoint for setting `is_default` on a config, so leaving the attribute writable in the provider was a footgun that only ever produced the "inconsistent result after apply" error above. It is now `Computed`, matching the data source. To pin a specific config as the default for an API key, use `portkey_api_key.defaults.config_id` — that goes through a separate endpoint that does honour the write. **Upgrade note:** if your HCL sets `is_default` on a `portkey_config`, remove that line; nothing you wrote there was ever taking effect, and the plan will now error with `Cannot set value for this attribute as the provider has marked it as read-only` until the line is dropped.
+
 ## [0.2.33] - 2026-08-19
 
 ### Added
