@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-28
+
 ### Fixed
 - **`portkey_config` "produced an unexpected new value: `.is_default`"** — setting `is_default = true` on a `portkey_config` resource failed every apply with a provider-inconsistency error (`was cty.True, but now cty.False`), and toggling it back to `false` after the workaround produced the same error in reverse. Two independent bugs fed the same symptom: (1) `CreateConfigRequest` tagged the field as `isDefault` (camelCase) instead of the API's `is_default` (snake_case), and (2) the Portkey `POST /configs` and `PUT /configs/{id}` endpoints do not accept `is_default` on write under either name — the field is silently dropped and the response reports the default (`false`). Because the plan carried `true` and the applied state carried `false`, the framework surfaced the mismatch as a hard error.
 
@@ -386,7 +388,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace deletion may be blocked by existing resources
 - Prompt template updates create new versions (use makeDefault to promote)
 
-[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.34...HEAD
+[Unreleased]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.34...v0.3.0
 [0.2.34]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.33...v0.2.34
 [0.2.33]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.32...v0.2.33
 [0.2.32]: https://github.com/Portkey-AI/terraform-provider-portkey/compare/v0.2.31...v0.2.32
